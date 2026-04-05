@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { zodResolver } from "@hookform/resolvers/zod";
+import { zodResolver } from "@/lib/zod-resolver";
 import { TRPCClientError } from "@trpc/client";
 import { IconBrandGoogle } from "@tabler/icons-react";
 import Link from "next/link";

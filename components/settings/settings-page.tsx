@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { zodResolver } from "@hookform/resolvers/zod";
+import { zodResolver } from "@/lib/zod-resolver";
 import { IconPencil, IconPlus, IconTrash } from "@tabler/icons-react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";

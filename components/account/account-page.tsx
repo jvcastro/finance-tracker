@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { zodResolver } from "@hookform/resolvers/zod";
+import { zodResolver } from "@/lib/zod-resolver";
 import { IconLogout } from "@tabler/icons-react";
 import { signOut } from "next-auth/react";
 import { useForm } from "react-hook-form";
