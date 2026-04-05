@@ -29,24 +29,19 @@ export async function ensureIncomeRecordsForMonth(
     const dates = getPaymentDatesForStream(stream, monthStart, monthEnd);
     for (const scheduledDate of dates) {
       const normalized = atNoonLocal(scheduledDate);
-      const existing = await prisma.income.findFirst({
-        where: {
-          userId,
-          incomeStreamId: stream.id,
-          scheduledDate: normalized,
-        },
-      });
-      if (existing) continue;
-
-      await prisma.income.create({
-        data: {
-          userId,
-          incomeStreamId: stream.id,
-          scheduledDate: normalized,
-          amount: stream.amount,
-          received: false,
-          tagId: stream.tagId,
-        },
+      // Use skipDuplicates so concurrent list/sync calls can't insert twice (check-then-insert races).
+      await prisma.income.createMany({
+        data: [
+          {
+            userId,
+            incomeStreamId: stream.id,
+            scheduledDate: normalized,
+            amount: stream.amount,
+            received: false,
+            tagId: stream.tagId,
+          },
+        ],
+        skipDuplicates: true,
       });
     }
   }

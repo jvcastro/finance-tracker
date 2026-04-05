@@ -272,6 +272,19 @@ export const incomeRouter = router({
         const userId = ctx.session!.user!.id;
         await assertTag(ctx.prisma, userId, input.tagId);
         const scheduledDate = atNoonLocal(input.scheduledDate);
+        const existingManual = await ctx.prisma.income.findFirst({
+          where: {
+            userId,
+            incomeStreamId: null,
+            scheduledDate,
+          },
+        });
+        if (existingManual) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "You already have a manual payment on this date.",
+          });
+        }
         const row = await ctx.prisma.income.create({
           data: {
             userId,
