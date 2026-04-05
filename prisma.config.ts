@@ -8,7 +8,9 @@ export default defineConfig({
     seed: "tsx prisma/seed.ts",
   },
   datasource: {
-    // Default allows `pnpm install` / `prisma generate` before `.env` exists; copy `.env.example` for local DB.
-    url: process.env.DATABASE_URL ?? "file:./prisma/dev.db",
+    // Must match prisma/schema.prisma `provider` (postgresql). Use Neon or local Postgres URL.
+    url:
+      process.env.DATABASE_URL ??
+      "postgresql://127.0.0.1:5432/finance_tracker",
   },
 });

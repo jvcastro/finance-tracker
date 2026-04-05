@@ -4,7 +4,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
 }
 
 model User {
@@ -62,12 +62,12 @@ model VerificationToken {
 }
 
 model Tag {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   name      String
   color     String?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
   incomes   Income[]
   expenses  Expense[]
 
