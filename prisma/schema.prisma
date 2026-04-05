@@ -20,6 +20,7 @@ model User {
 
   tags            Tag[]
   banks           Bank[]
+  incomeStreams   IncomeStream[]
   incomes         Income[]
   expenses        Expense[]
   creditCardDebts CreditCardDebt[]
@@ -68,8 +69,9 @@ model Tag {
   name      String
   color     String?
   createdAt DateTime  @default(now())
-  incomes   Income[]
-  expenses  Expense[]
+  incomes        Income[]
+  incomeStreams  IncomeStream[]
+  expenses       Expense[]
 
   @@unique([userId, name])
 }
@@ -87,16 +89,70 @@ model Bank {
   @@index([userId])
 }
 
+/// Where the income comes from: employer salary, a project, or uncategorized.
+enum IncomeSourceType {
+  SALARY
+  PROJECT
+  OTHER
+}
+
+/// How often an employer pays (company salary only). ONE_OFF = bonus or single payment.
+enum SalaryPaySchedule {
+  MONTHLY
+  BI_WEEKLY
+  ONE_OFF
+}
+
+/// Your income source definition (amount, schedule, dates). Does not create ledger rows by itself.
+model IncomeStream {
+  id                String             @id @default(cuid())
+  userId            String
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Per payment: monthly salary = one month gross; bi-weekly = one paycheck; project/other = usually monthly.
+  amount            Decimal
+  sourceType        IncomeSourceType
+  sourceName        String?
+  salaryPaySchedule SalaryPaySchedule?
+  /// Day of month pay lands (1–31); Feb etc. clamp to last day. Not derived from start date.
+  paymentDay        Int              @default(15)
+  /// Second pay day in the month (e.g. 30); required for bi-weekly salary (e.g. 15 & 30).
+  secondPaymentDay  Int?
+  startDate         DateTime
+  endDate           DateTime?
+  description       String?
+  tagId             String?
+  tag               Tag?               @relation(fields: [tagId], references: [id], onDelete: SetNull)
+  isActive          Boolean            @default(true)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  incomes           Income[]
+
+  @@index([userId])
+}
+
+/// One expected or actual payment: generated from a stream’s pay schedule, or entered manually.
 model Income {
-  id          String   @id @default(cuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  amount      Decimal
-  date        DateTime
-  description String?
-  tagId       String?
-  tag         Tag?     @relation(fields: [tagId], references: [id], onDelete: SetNull)
-  createdAt   DateTime @default(now())
+  id             String        @id @default(cuid())
+  userId         String
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  incomeStreamId String?
+  incomeStream   IncomeStream? @relation(fields: [incomeStreamId], references: [id], onDelete: Cascade)
+  /// Calendar date this payment is for (payday).
+  scheduledDate  DateTime
+  amount         Decimal
+  received       Boolean       @default(false)
+  description    String?
+  tagId          String?
+  tag            Tag?          @relation(fields: [tagId], references: [id], onDelete: SetNull)
+  /// Only when incomeStreamId is null (manual entry).
+  sourceType        IncomeSourceType?
+  sourceName        String?
+  salaryPaySchedule SalaryPaySchedule?
+  createdAt         DateTime      @default(now())
+
+  @@index([userId])
+  @@index([scheduledDate])
+  @@unique([incomeStreamId, scheduledDate])
 }
 
 model Expense {

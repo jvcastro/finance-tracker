@@ -3,8 +3,10 @@
 import {
   flexRender,
   getCoreRowModel,
+  getFilteredRowModel,
   useReactTable,
   type ColumnDef,
+  type FilterFn,
 } from "@tanstack/react-table";
 
 import {
@@ -15,66 +17,129 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Input } from "@/components/ui/input";
+
+function jsonRowGlobalFilter<TData>(): FilterFn<TData> {
+  return (row, _columnId, filterValue) => {
+    const q = String(filterValue ?? "").toLowerCase().trim();
+    if (!q) return true;
+    try {
+      return JSON.stringify(row.original).toLowerCase().includes(q);
+    } catch {
+      return false;
+    }
+  };
+}
 
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
   data: TData[];
   emptyMessage?: string;
+  /** Shown only below `sm` when you use responsive column hiding—explains horizontal scroll. */
+  mobileScrollHint?: string;
+  /** Applied to the `<table>` (e.g. `min-w-[720px]` if you prefer scroll over hiding columns). */
+  tableClassName?: string;
+  /** When set with `onGlobalFilterChange`, filters rows and shows a search field above the table. */
+  globalFilter?: string;
+  onGlobalFilterChange?: (value: string) => void;
+  filterPlaceholder?: string;
 }
 
 export function DataTable<TData, TValue>({
   columns,
   data,
   emptyMessage = "No rows yet.",
+  mobileScrollHint,
+  tableClassName,
+  globalFilter,
+  onGlobalFilterChange,
+  filterPlaceholder = "Filter rows…",
 }: DataTableProps<TData, TValue>) {
+  const filterEnabled =
+    globalFilter !== undefined && onGlobalFilterChange !== undefined;
+
   const table = useReactTable({
     data,
     columns,
+    state: filterEnabled ? { globalFilter } : {},
+    onGlobalFilterChange: filterEnabled ? onGlobalFilterChange : undefined,
     getCoreRowModel: getCoreRowModel(),
+    getFilteredRowModel: filterEnabled ? getFilteredRowModel() : undefined,
+    globalFilterFn: filterEnabled ? jsonRowGlobalFilter<TData>() : undefined,
   });
 
+  const filteredRows = table.getRowModel().rows;
+  const hasFilterText = Boolean(globalFilter?.trim());
+  const showNoMatch =
+    filterEnabled && hasFilterText && data.length > 0 && filteredRows.length === 0;
+  const emptyCellMessage = showNoMatch ? "No rows match your filter." : emptyMessage;
+
   return (
-    <div className="overflow-x-auto rounded-lg border">
-      <Table>
-        <TableHeader>
-          {table.getHeaderGroups().map((headerGroup) => (
-            <TableRow key={headerGroup.id}>
-              {headerGroup.headers.map((header) => (
-                <TableHead key={header.id}>
-                  {header.isPlaceholder
-                    ? null
-                    : flexRender(
-                        header.column.columnDef.header,
-                        header.getContext(),
-                      )}
-                </TableHead>
-              ))}
-            </TableRow>
-          ))}
-        </TableHeader>
-        <TableBody>
-          {table.getRowModel().rows?.length ? (
-            table.getRowModel().rows.map((row) => (
-              <TableRow key={row.id}>
-                {row.getVisibleCells().map((cell) => (
-                  <TableCell key={cell.id}>
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </TableCell>
+    <div className="min-w-0 space-y-2">
+      {filterEnabled ? (
+        <Input
+          type="search"
+          placeholder={filterPlaceholder}
+          value={globalFilter}
+          onChange={(e) => onGlobalFilterChange(e.target.value)}
+          className="max-w-sm"
+          aria-label={filterPlaceholder}
+        />
+      ) : null}
+      {/* Border wraps the scroll container inside `Table` (shadcn). */}
+      <div className="rounded-lg border border-border/80 bg-card shadow-sm">
+        <Table className={tableClassName}>
+          <TableHeader>
+            {table.getHeaderGroups().map((headerGroup) => (
+              <TableRow key={headerGroup.id}>
+                {headerGroup.headers.map((header) => (
+                  <TableHead
+                    key={header.id}
+                    className={header.column.columnDef.meta?.className}
+                  >
+                    {header.isPlaceholder
+                      ? null
+                      : flexRender(
+                          header.column.columnDef.header,
+                          header.getContext(),
+                        )}
+                  </TableHead>
                 ))}
               </TableRow>
-            ))
-          ) : (
-            <TableRow>
-              <TableCell
-                colSpan={columns.length}
-                className="text-muted-foreground h-16 text-center text-xs"
-              >
-                {emptyMessage}
-              </TableCell>
-            </TableRow>
-          )}
-        </TableBody>
-      </Table>
+            ))}
+          </TableHeader>
+          <TableBody>
+            {table.getRowModel().rows?.length ? (
+              table.getRowModel().rows.map((row) => (
+                <TableRow key={row.id}>
+                  {row.getVisibleCells().map((cell) => (
+                    <TableCell
+                      key={cell.id}
+                      className={cell.column.columnDef.meta?.className}
+                    >
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))
+            ) : (
+              <TableRow>
+                <TableCell
+                  colSpan={columns.length}
+                  className="text-muted-foreground h-16 text-center text-xs"
+                >
+                  {emptyCellMessage}
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </div>
+      {mobileScrollHint ? (
+        <p className="text-muted-foreground px-1 text-center text-xs sm:hidden">
+          {mobileScrollHint}
+        </p>
+      ) : null}
     </div>
   );
 }

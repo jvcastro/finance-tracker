@@ -109,9 +109,7 @@ export function SettingsPage() {
     <div className="mx-auto flex max-w-2xl flex-col gap-8">
       <div>
         <h1 className="text-lg font-semibold tracking-tight">Settings</h1>
-        <p className="text-muted-foreground text-sm">
-          Banks, tags, and display preferences for your workspace.
-        </p>
+        <p className="text-muted-foreground text-sm">Banks, tags, display.</p>
       </div>
 
       <BanksSection />
@@ -119,7 +117,7 @@ export function SettingsPage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">App preferences</CardTitle>
-          <CardDescription>Currency code and how weeks align in reports.</CardDescription>
+          <CardDescription>Currency & week start.</CardDescription>
         </CardHeader>
         <CardContent>
           {settingsLoading ? (
@@ -166,9 +164,7 @@ export function SettingsPage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Tags</CardTitle>
-          <CardDescription>
-            Use tags on income and expense rows. Deleting a tag unsets it on existing rows.
-          </CardDescription>
+          <CardDescription>For income & expenses. Delete removes from rows.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <form
@@ -298,10 +294,7 @@ function BanksSection() {
     <Card>
       <CardHeader>
         <CardTitle className="text-base">Banks</CardTitle>
-        <CardDescription>
-          Keep a list of banks and institutions you use (e.g. checking, savings, card issuers). You
-          can reference these when logging expenses or credit card entries.
-        </CardDescription>
+        <CardDescription>Institutions you use (reference when logging).</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <form

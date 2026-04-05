@@ -12,3 +12,16 @@ export function formatDate(d: Date | string) {
     dateStyle: "medium",
   }).format(date);
 }
+
+/** Income validity window: start through end, or “Ongoing” when end is null. */
+export function formatIncomePeriod(
+  start: Date | string,
+  end: Date | string | null | undefined,
+) {
+  const startStr = formatDate(start);
+  if (end == null) {
+    return `${startStr} → Ongoing`;
+  }
+  return `${startStr} – ${formatDate(end)}`;
+}
+

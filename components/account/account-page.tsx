@@ -71,9 +71,7 @@ export function AccountPage() {
     <div className="mx-auto flex max-w-lg flex-col gap-6">
       <div>
         <h1 className="text-lg font-semibold tracking-tight">Account</h1>
-        <p className="text-muted-foreground text-sm">
-          Your profile is tied to this login. Sign out when you&apos;re done on a shared device.
-        </p>
+        <p className="text-muted-foreground text-sm">Profile and sign out.</p>
       </div>
 
       <Card>

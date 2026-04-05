@@ -79,7 +79,7 @@ export function RegisterForm({ googleEnabled }: { googleEnabled: boolean }) {
     <Card className="w-full max-w-sm">
       <CardHeader>
         <CardTitle className="text-base">Create account</CardTitle>
-        <CardDescription>Email and password, or Google.</CardDescription>
+        <CardDescription>Email/password or Google.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {googleEnabled ? (

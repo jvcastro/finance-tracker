@@ -5,6 +5,7 @@ import { zodResolver } from "@/lib/zod-resolver";
 import { IconDotsVertical, IconPencil, IconPlus, IconTrash } from "@tabler/icons-react";
 import { type ColumnDef } from "@tanstack/react-table";
 import { useForm } from "react-hook-form";
+import { parseAsString, parseAsStringLiteral, useQueryState } from "nuqs";
 import { toast } from "sonner";
 import { z } from "zod";
 
@@ -75,7 +76,12 @@ type DebtRow = {
   note: string | null;
 };
 
-function ExpensesTab() {
+type TableFilterProps = {
+  tableFilter: string;
+  onTableFilterChange: (value: string) => void;
+};
+
+function ExpensesTab({ tableFilter, onTableFilterChange }: TableFilterProps) {
   const fmt = useCurrencyFormatter();
   const utils = trpc.useUtils();
   const { data: rows = [], isLoading } = trpc.expense.list.useQuery();
@@ -161,11 +167,13 @@ function ExpensesTab() {
     {
       accessorKey: "description",
       header: "Description",
+      meta: { className: "hidden sm:table-cell" },
       cell: ({ row }) => row.original.description || "—",
     },
     {
       id: "tag",
       header: "Tag",
+      meta: { className: "hidden sm:table-cell" },
       cell: ({ row }) => row.original.tag?.name ?? "—",
     },
     {
@@ -230,7 +238,13 @@ function ExpensesTab() {
       {isLoading ? (
         <p className="text-muted-foreground text-sm">Loading…</p>
       ) : (
-        <DataTable columns={columns} data={rows as ExpenseRow[]} />
+        <DataTable
+          columns={columns}
+          data={rows as ExpenseRow[]}
+          mobileScrollHint="Swipe sideways to see description and tag."
+          globalFilter={tableFilter}
+          onGlobalFilterChange={onTableFilterChange}
+        />
       )}
 
       <Dialog
@@ -290,7 +304,7 @@ function ExpensesTab() {
   );
 }
 
-function CreditCardTab() {
+function CreditCardTab({ tableFilter, onTableFilterChange }: TableFilterProps) {
   const fmt = useCurrencyFormatter();
   const utils = trpc.useUtils();
   const { data: rows = [], isLoading } = trpc.creditCardDebt.list.useQuery();
@@ -379,11 +393,13 @@ function CreditCardTab() {
     {
       accessorKey: "fromAccount",
       header: "From",
+      meta: { className: "max-w-[6rem] truncate sm:max-w-none" },
       cell: ({ row }) => row.original.fromAccount,
     },
     {
       accessorKey: "toAccount",
       header: "To",
+      meta: { className: "max-w-[6rem] truncate sm:max-w-none" },
       cell: ({ row }) => row.original.toAccount,
     },
     {
@@ -398,6 +414,7 @@ function CreditCardTab() {
     {
       id: "note",
       header: "Note",
+      meta: { className: "hidden sm:table-cell" },
       cell: ({ row }) => row.original.note || "—",
     },
     {
@@ -455,7 +472,13 @@ function CreditCardTab() {
       {isLoading ? (
         <p className="text-muted-foreground text-sm">Loading…</p>
       ) : (
-        <DataTable columns={columns} data={rows as DebtRow[]} />
+        <DataTable
+          columns={columns}
+          data={rows as DebtRow[]}
+          mobileScrollHint="Swipe sideways for notes and full account names."
+          globalFilter={tableFilter}
+          onGlobalFilterChange={onTableFilterChange}
+        />
       )}
 
       <Dialog
@@ -512,7 +535,18 @@ function CreditCardTab() {
   );
 }
 
+const expenseTabValues = ["regular", "cards"] as const;
+
 export function ExpensesPage() {
+  const [tab, setTab] = useQueryState(
+    "tab",
+    parseAsStringLiteral(expenseTabValues).withDefault("regular"),
+  );
+  const [q, setQ] = useQueryState(
+    "q",
+    parseAsString.withDefault("").withOptions({ throttleMs: 300 }),
+  );
+
   return (
     <div className="flex flex-col gap-4">
       <div>
@@ -522,16 +556,22 @@ export function ExpensesPage() {
         </p>
       </div>
 
-      <Tabs defaultValue="regular" className="w-full">
+      <Tabs
+        value={tab}
+        onValueChange={(v) => {
+          void setTab(v as (typeof expenseTabValues)[number]);
+        }}
+        className="w-full"
+      >
         <TabsList className="grid w-full max-w-md grid-cols-2">
           <TabsTrigger value="regular">Regular</TabsTrigger>
           <TabsTrigger value="cards">Credit card</TabsTrigger>
         </TabsList>
         <TabsContent value="regular" className="mt-4">
-          <ExpensesTab />
+          <ExpensesTab tableFilter={q} onTableFilterChange={setQ} />
         </TabsContent>
         <TabsContent value="cards" className="mt-4">
-          <CreditCardTab />
+          <CreditCardTab tableFilter={q} onTableFilterChange={setQ} />
         </TabsContent>
       </Tabs>
     </div>
