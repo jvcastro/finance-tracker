@@ -17,7 +17,7 @@ const fontMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Finance Tracker",
-  description: "Track income, expenses, and credit card payments.",
+  description: "Track income and expenses with tags and recurring rules.",
 };
 
 export default function RootLayout({

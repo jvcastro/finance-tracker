@@ -27,6 +27,8 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
+import { isProtectedTagName } from "@/lib/default-tags";
+import { DEFAULT_CURRENCY, formatCurrency, getCurrencySymbol } from "@/lib/format";
 import { trpc } from "@/lib/trpc/react";
 
 const settingsSchema = z.object({
@@ -36,10 +38,20 @@ const settingsSchema = z.object({
 
 type SettingsForm = z.infer<typeof settingsSchema>;
 
-const tagSchema = z.object({
-  name: z.string().min(1).max(64),
-  color: z.string().max(32).optional(),
-});
+const tagSchema = z
+  .object({
+    name: z.string().min(1).max(64),
+    color: z.string().max(32).optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (isProtectedTagName(data.name)) {
+      ctx.addIssue({
+        code: "custom",
+        message: "That name is reserved for the built-in Credit card tag.",
+        path: ["name"],
+      });
+    }
+  });
 
 const bankSchema = z.object({
   name: z.string().min(1).max(120),
@@ -53,7 +65,7 @@ export function SettingsPage() {
     onSuccess: () => {
       void utils.settings.get.invalidate();
       void utils.dashboard.summary.invalidate();
-      toast.success("Settings saved");
+      toast.success("Settings saved.");
     },
     onError: (e) => toast.error(e.message),
   });
@@ -62,21 +74,21 @@ export function SettingsPage() {
   const createTag = trpc.tag.create.useMutation({
     onSuccess: () => {
       void utils.tag.list.invalidate();
-      toast.success("Tag created");
+      toast.success("Tag created.");
     },
     onError: (e) => toast.error(e.message),
   });
   const deleteTag = trpc.tag.delete.useMutation({
     onSuccess: () => {
       void utils.tag.list.invalidate();
-      toast.success("Tag removed");
+      toast.success("Tag deleted.");
     },
     onError: (e) => toast.error(e.message),
   });
 
   const form = useForm<SettingsForm>({
     resolver: zodResolver(settingsSchema),
-    defaultValues: { currency: "USD", weekStartsOn: 0 },
+    defaultValues: { currency: DEFAULT_CURRENCY, weekStartsOn: 0 },
   });
 
   React.useEffect(() => {
@@ -109,7 +121,9 @@ export function SettingsPage() {
     <div className="mx-auto flex max-w-2xl flex-col gap-8">
       <div>
         <h1 className="text-lg font-semibold tracking-tight">Settings</h1>
-        <p className="text-muted-foreground text-sm">Banks, tags, display.</p>
+        <p className="text-muted-foreground text-sm">
+          Banks, tags, and display preferences.
+        </p>
       </div>
 
       <BanksSection />
@@ -117,7 +131,7 @@ export function SettingsPage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">App preferences</CardTitle>
-          <CardDescription>Currency & week start.</CardDescription>
+          <CardDescription>Currency and first day of the week.</CardDescription>
         </CardHeader>
         <CardContent>
           {settingsLoading ? (
@@ -128,8 +142,19 @@ export function SettingsPage() {
               onSubmit={form.handleSubmit(onSettingsSubmit)}
             >
               <div className="grid gap-2 sm:col-span-1">
-                <Label htmlFor="currency">Currency (ISO code)</Label>
-                <Input id="currency" {...form.register("currency")} placeholder="USD" />
+                <Label htmlFor="currency">Currency (ISO 4217)</Label>
+                <Input id="currency" {...form.register("currency")} placeholder="PHP" />
+                <p className="text-muted-foreground text-xs">
+                  Shown as{" "}
+                  <span className="font-medium text-foreground">
+                    {getCurrencySymbol(form.watch("currency") || DEFAULT_CURRENCY)}
+                  </span>{" "}
+                  · sample{" "}
+                  {formatCurrency(
+                    1234.56,
+                    form.watch("currency") || DEFAULT_CURRENCY,
+                  )}
+                </p>
               </div>
               <div className="grid gap-2 sm:col-span-1">
                 <Label>Week starts on</Label>
@@ -152,7 +177,7 @@ export function SettingsPage() {
                 </Select>
               </div>
               <div className="sm:col-span-2">
-                <Button type="submit" size="sm" disabled={updateSettings.isPending}>
+                <Button type="submit" disabled={updateSettings.isPending}>
                   Save preferences
                 </Button>
               </div>
@@ -164,7 +189,10 @@ export function SettingsPage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Tags</CardTitle>
-          <CardDescription>For income & expenses. Delete removes from rows.</CardDescription>
+          <CardDescription>
+            Use tags on income and expenses. Deleting a tag removes it from entries. The
+            Credit card tag is built in and cannot be edited or removed.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <form
@@ -176,10 +204,10 @@ export function SettingsPage() {
               <Input id="tag-name" placeholder="Groceries" {...tagForm.register("name")} />
             </div>
             <div className="grid w-full gap-2 sm:max-w-[140px]">
-              <Label htmlFor="tag-color">Color (hex)</Label>
+              <Label htmlFor="tag-color">Color (hex, optional)</Label>
               <Input id="tag-color" placeholder="#888" {...tagForm.register("color")} />
             </div>
-            <Button type="submit" size="sm" disabled={createTag.isPending}>
+            <Button type="submit" disabled={createTag.isPending}>
               <IconPlus className="size-4" />
               Add
             </Button>
@@ -191,32 +219,50 @@ export function SettingsPage() {
             {tags.length === 0 ? (
               <p className="text-muted-foreground text-sm">No tags yet.</p>
             ) : (
-              tags.map((t) => (
-                <li
-                  key={t.id}
-                  className="flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm"
-                >
-                  <span className="flex items-center gap-2">
-                    {t.color ? (
-                      <span
-                        className="size-3 rounded-full border"
-                        style={{ backgroundColor: t.color }}
-                        aria-hidden
-                      />
-                    ) : null}
-                    {t.name}
-                  </span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-xs"
-                    aria-label={`Delete ${t.name}`}
-                    onClick={() => deleteTag.mutate({ id: t.id })}
+              tags.map((t) => {
+                const locked = isProtectedTagName(t.name);
+                return (
+                  <li
+                    key={t.id}
+                    className="flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm"
                   >
-                    <IconTrash className="size-4 text-destructive" />
-                  </Button>
-                </li>
-              ))
+                    <span className="flex min-w-0 flex-1 items-center gap-2">
+                      {t.color ? (
+                        <span
+                          className="size-3 shrink-0 rounded-full border"
+                          style={{ backgroundColor: t.color }}
+                          aria-hidden
+                        />
+                      ) : null}
+                      <span className="truncate">{t.name}</span>
+                      {locked ? (
+                        <span className="text-muted-foreground shrink-0 text-[0.625rem] font-medium uppercase tracking-wide">
+                          Built-in
+                        </span>
+                      ) : null}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-xs"
+                      disabled={locked}
+                      title={
+                        locked
+                          ? "Built-in tag: cannot delete"
+                          : `Delete ${t.name}`
+                      }
+                      aria-label={locked ? `${t.name} (built-in, cannot delete)` : `Delete ${t.name}`}
+                      onClick={() => {
+                        if (!locked) deleteTag.mutate({ id: t.id });
+                      }}
+                    >
+                      <IconTrash
+                        className={`size-4 ${locked ? "text-muted-foreground opacity-40" : "text-destructive"}`}
+                      />
+                    </Button>
+                  </li>
+                );
+              })
             )}
           </ul>
         </CardContent>
@@ -231,21 +277,21 @@ function BanksSection() {
   const createBank = trpc.bank.create.useMutation({
     onSuccess: () => {
       void utils.bank.list.invalidate();
-      toast.success("Bank added");
+      toast.success("Bank added.");
     },
     onError: (e) => toast.error(e.message),
   });
   const updateBank = trpc.bank.update.useMutation({
     onSuccess: () => {
       void utils.bank.list.invalidate();
-      toast.success("Bank updated");
+      toast.success("Bank updated.");
     },
     onError: (e) => toast.error(e.message),
   });
   const deleteBank = trpc.bank.delete.useMutation({
     onSuccess: () => {
       void utils.bank.list.invalidate();
-      toast.success("Bank removed");
+      toast.success("Bank deleted.");
     },
     onError: (e) => toast.error(e.message),
   });
@@ -294,7 +340,9 @@ function BanksSection() {
     <Card>
       <CardHeader>
         <CardTitle className="text-base">Banks</CardTitle>
-        <CardDescription>Institutions you use (reference when logging).</CardDescription>
+        <CardDescription>
+          Accounts and institutions you use when categorizing transactions.
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <form
@@ -318,7 +366,7 @@ function BanksSection() {
             />
           </div>
           <div className="flex items-end sm:col-span-1">
-            <Button type="submit" size="sm" disabled={createBank.isPending}>
+            <Button type="submit" disabled={createBank.isPending}>
               <IconPlus className="size-4" />
               Add bank
             </Button>
@@ -391,7 +439,7 @@ function BanksSection() {
                 <Textarea id="edit-bank-notes" rows={3} {...editForm.register("notes")} />
               </div>
               <DialogFooter>
-                <Button type="submit" size="sm" disabled={updateBank.isPending}>
+                <Button type="submit" disabled={updateBank.isPending}>
                   Save
                 </Button>
               </DialogFooter>

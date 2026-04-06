@@ -53,7 +53,7 @@ export function DataTable<TData, TValue>({
   tableClassName,
   globalFilter,
   onGlobalFilterChange,
-  filterPlaceholder = "Filter rows…",
+  filterPlaceholder = "Search…",
 }: DataTableProps<TData, TValue>) {
   const filterEnabled =
     globalFilter !== undefined && onGlobalFilterChange !== undefined;

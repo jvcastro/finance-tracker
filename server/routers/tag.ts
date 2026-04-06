@@ -1,7 +1,13 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
+import { isProtectedTagName } from "@/lib/default-tags";
 import { router, protectedProcedure } from "@/server/trpc";
+
+const PROTECTED_TAG_MESSAGE =
+  "The “Credit card” tag is built in and cannot be changed or removed.";
+const RESERVED_NAME_MESSAGE =
+  "That tag name is reserved for the built-in Credit card tag.";
 
 export const tagRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
@@ -20,6 +26,12 @@ export const tagRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session!.user!.id;
+      if (isProtectedTagName(input.name)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: RESERVED_NAME_MESSAGE,
+        });
+      }
       try {
         return await ctx.prisma.tag.create({
           data: {
@@ -51,6 +63,15 @@ export const tagRouter = router({
       if (!tag) {
         throw new TRPCError({ code: "NOT_FOUND" });
       }
+      if (isProtectedTagName(tag.name)) {
+        throw new TRPCError({ code: "FORBIDDEN", message: PROTECTED_TAG_MESSAGE });
+      }
+      if (isProtectedTagName(input.name)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: RESERVED_NAME_MESSAGE,
+        });
+      }
       try {
         return await ctx.prisma.tag.update({
           where: { id: input.id },
@@ -72,6 +93,9 @@ export const tagRouter = router({
       });
       if (!tag) {
         throw new TRPCError({ code: "NOT_FOUND" });
+      }
+      if (isProtectedTagName(tag.name)) {
+        throw new TRPCError({ code: "FORBIDDEN", message: PROTECTED_TAG_MESSAGE });
       }
       await ctx.prisma.tag.delete({ where: { id: input.id } });
     }),

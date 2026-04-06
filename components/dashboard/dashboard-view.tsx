@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import {
   IconArrowDownRight,
   IconArrowUpRight,
@@ -8,7 +9,9 @@ import {
   IconPigMoney,
   IconScale,
   IconSparkles,
+  IconTags,
 } from "@tabler/icons-react";
+import { format } from "date-fns";
 
 import {
   CashFlowTrendChart,
@@ -16,7 +19,9 @@ import {
   IncomeReceivedCard,
   IncomeSourceChart,
   SalaryPayScheduleCard,
+  TagIncomeExpenseChart,
 } from "@/components/dashboard/dashboard-charts";
+import { RemindersCard } from "@/components/dashboard/reminders-card";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -60,7 +65,9 @@ export function DashboardView() {
             <Skeleton key={i} className="h-32 rounded-xl" />
           ))}
         </div>
+        <Skeleton className="h-40 rounded-xl" />
         <Skeleton className="h-72 rounded-xl" />
+        <Skeleton className="h-80 rounded-xl" />
         <div className="grid gap-4 xl:grid-cols-12">
           <Skeleton className="xl:col-span-8 h-80 rounded-xl" />
           <div className="xl:col-span-4 flex flex-col gap-4">
@@ -81,21 +88,22 @@ export function DashboardView() {
     monthlyTrend,
     incomeForecastMonths,
     incomeBreakdownThisMonth,
+    tagFlowThisMonth,
+    reminders,
   } = data;
   const savingsRate =
     thisMonth.income > 0
-      ? ((thisMonth.income - thisMonth.expense - thisMonth.debtPayments) /
-          thisMonth.income) *
-        100
+      ? ((thisMonth.income - thisMonth.expense) / thisMonth.income) * 100
       : 0;
 
-  const outflows = thisMonth.expense + thisMonth.debtPayments;
+  const outflows = thisMonth.expense;
   const burnPct =
     thisMonth.income > 0
       ? Math.min(100, (outflows / thisMonth.income) * 100)
       : 0;
 
   const monthName = new Date().toLocaleString(undefined, { month: "long" });
+  const monthLabel = format(new Date(), "MMMM yyyy");
 
   return (
     <div className="flex flex-col gap-8">
@@ -111,7 +119,7 @@ export function DashboardView() {
               </div>
               <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
               <p className="text-muted-foreground mt-1 max-w-2xl text-sm">
-                Cash flow, outlook, recent activity.
+                Cash flow, outlook, and recent activity.
               </p>
             </div>
           </div>
@@ -131,7 +139,7 @@ export function DashboardView() {
                   {fmt(thisMonth.net)}
                 </p>
                 <p className="text-muted-foreground mt-2 text-xs">
-                  After expenses & card in {monthName}.
+                  Income minus expenses in {monthName}.
                 </p>
               </CardContent>
             </Card>
@@ -145,7 +153,7 @@ export function DashboardView() {
                 <p className="text-chart-2 text-2xl font-semibold tabular-nums">
                   {fmt(thisMonth.income)}
                 </p>
-                <p className="text-muted-foreground mt-2 text-xs">In {monthName}.</p>
+                <p className="text-muted-foreground mt-2 text-xs">For {monthName}.</p>
               </CardContent>
             </Card>
 
@@ -158,36 +166,71 @@ export function DashboardView() {
                 <p className="text-destructive text-2xl font-semibold tabular-nums">
                   {fmt(thisMonth.expense)}
                 </p>
-                <p className="text-muted-foreground mt-2 text-xs">This month.</p>
+                <p className="text-muted-foreground mt-2 text-xs">For {monthName}.</p>
               </CardContent>
             </Card>
 
             <Card className="border-border/60 bg-card/80 shadow-sm backdrop-blur-sm transition-shadow hover:shadow-md">
               <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
-                <CardDescription>Card payments</CardDescription>
+                <CardDescription>Credit card</CardDescription>
                 <IconCreditCard className="text-muted-foreground size-5 shrink-0" aria-hidden />
               </CardHeader>
               <CardContent>
                 <p className="text-2xl font-semibold tabular-nums">
                   {fmt(thisMonth.debtPayments)}
                 </p>
-                <p className="text-muted-foreground mt-2 text-xs">From Expenses → Card.</p>
+                <p className="text-muted-foreground mt-2 text-xs">
+                  Expenses tagged with “Credit card” this month (subset of total
+                  expenses above).
+                </p>
               </CardContent>
             </Card>
           </div>
         </div>
       </section>
 
+      <RemindersCard reminders={reminders} formatMoney={fmt} />
+
       <section>
         <Card className="border-border/80 shadow-sm">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
-              <IconCalendarMonth className="text-chart-2 size-5" aria-hidden />
-              Income outlook
+              <IconTags className="text-primary size-5 shrink-0" aria-hidden />
+              Income and expenses by tag
             </CardTitle>
             <CardDescription>
-              Next 12 months from recurring streams (plan, not bank timing).
+              This month ({monthLabel}). Only tags with income or expense in this
+              period are shown.
             </CardDescription>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <TagIncomeExpenseChart
+              data={tagFlowThisMonth}
+              formatMoney={fmt}
+              monthLabel={monthLabel}
+            />
+          </CardContent>
+        </Card>
+      </section>
+
+      <section>
+        <Card className="border-border/80 shadow-sm">
+          <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
+            <div className="min-w-0 space-y-1.5">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <IconCalendarMonth className="text-chart-2 size-5 shrink-0" aria-hidden />
+                Income outlook
+              </CardTitle>
+              <CardDescription>
+                Next 12 months from recurring income (planned amounts, not bank posting dates).
+              </CardDescription>
+            </div>
+            <Link
+              href="/income?tab=streams"
+              className="text-primary shrink-0 text-sm font-medium underline-offset-4 hover:underline"
+            >
+              Recurring income
+            </Link>
           </CardHeader>
           <CardContent className="pt-0">
             <IncomeForecastChart data={incomeForecastMonths} formatMoney={fmt} />
@@ -199,7 +242,9 @@ export function DashboardView() {
         <Card className="border-border/80 xl:col-span-8 shadow-sm">
           <CardHeader>
             <CardTitle className="text-base">Six-month cash flow</CardTitle>
-            <CardDescription>Income vs spend vs card by month.</CardDescription>
+            <CardDescription>
+              Income, all expenses, and credit card–tagged expenses by month.
+            </CardDescription>
           </CardHeader>
           <CardContent className="pt-0">
             <CashFlowTrendChart data={monthlyTrend} formatMoney={fmt} />
@@ -210,7 +255,9 @@ export function DashboardView() {
           <Card className="border-border/80 flex-1 shadow-sm">
             <CardHeader>
               <CardTitle className="text-base">Income by source</CardTitle>
-              <CardDescription>This month by source.</CardDescription>
+              <CardDescription>
+                Payment records this month, grouped by source type.
+              </CardDescription>
             </CardHeader>
             <CardContent className="pt-0">
               <IncomeSourceChart
@@ -238,7 +285,7 @@ export function DashboardView() {
               <IconPigMoney className="size-5 text-chart-2" aria-hidden />
               Savings rate
             </CardTitle>
-            <CardDescription>Income left after spend & card.</CardDescription>
+            <CardDescription>Income after expenses (same month).</CardDescription>
           </CardHeader>
           <CardContent>
             <p className="text-3xl font-semibold tabular-nums tracking-tight">
@@ -251,11 +298,11 @@ export function DashboardView() {
         <Card className="border-border/80 shadow-sm">
           <CardHeader>
             <CardTitle className="text-base">Outflow load</CardTitle>
-            <CardDescription>Outflows vs income.</CardDescription>
+            <CardDescription>Total expenses versus income this month.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">Total out</span>
+              <span className="text-muted-foreground">Total outflows</span>
               <span className="tabular-nums font-medium">{fmt(outflows)}</span>
             </div>
             <div className="bg-muted relative h-2.5 overflow-hidden rounded-full">
@@ -267,7 +314,7 @@ export function DashboardView() {
               />
             </div>
             <p className="text-muted-foreground text-xs">
-              Share of income to spend + card ({burnPct.toFixed(0)}%).
+              Share of income going to expenses ({burnPct.toFixed(0)}%).
             </p>
           </CardContent>
         </Card>
@@ -275,7 +322,9 @@ export function DashboardView() {
         <Card className="border-border/80 shadow-sm">
           <CardHeader>
             <CardTitle className="text-base">Lifetime totals</CardTitle>
-            <CardDescription>All-time totals.</CardDescription>
+            <CardDescription>
+              Sums of every income and expense row (includes future scheduled income).
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             <div className="flex justify-between gap-2 border-b border-border/60 pb-2">
@@ -291,7 +340,7 @@ export function DashboardView() {
               </span>
             </div>
             <div className="flex justify-between gap-2 border-b border-border/60 pb-2">
-              <span className="text-muted-foreground">Card payments</span>
+              <span className="text-muted-foreground">Credit card (tagged)</span>
               <span className="font-medium tabular-nums">
                 {fmt(totals.totalDebtPayments)}
               </span>
@@ -312,13 +361,30 @@ export function DashboardView() {
 
       <section className="grid gap-4 lg:grid-cols-2">
         <Card className="border-border/80 shadow-sm">
-          <CardHeader>
-            <CardTitle className="text-base">Recent income</CardTitle>
-            <CardDescription>Last five.</CardDescription>
+          <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
+            <div className="space-y-1.5">
+              <CardTitle className="text-base">Recent income</CardTitle>
+              <CardDescription>Most recent five payment records.</CardDescription>
+            </div>
+            <Link
+              href="/income"
+              className="text-primary shrink-0 text-sm font-medium underline-offset-4 hover:underline"
+            >
+              View all
+            </Link>
           </CardHeader>
           <CardContent className="space-y-0">
             {recentIncome.length === 0 ? (
-              <p className="text-muted-foreground py-6 text-center text-sm">No income yet.</p>
+              <p className="text-muted-foreground py-6 text-center text-sm">
+                No income yet.{" "}
+                <Link
+                  href="/income?tab=streams"
+                  className="text-foreground font-medium underline underline-offset-2"
+                >
+                  Add recurring income
+                </Link>{" "}
+                or a manual payment.
+              </p>
             ) : (
               recentIncome.map((row) => {
                 const sourceType =
@@ -366,6 +432,11 @@ export function DashboardView() {
                             {row.tag.name}
                           </Badge>
                         ) : null}
+                        {row.bank ? (
+                          <Badge variant="outline" className="text-[10px] font-normal">
+                            {row.bank.name}
+                          </Badge>
+                        ) : null}
                       </div>
                     </div>
                     <span className="text-chart-2 shrink-0 text-sm font-semibold tabular-nums">
@@ -379,13 +450,30 @@ export function DashboardView() {
         </Card>
 
         <Card className="border-border/80 shadow-sm">
-          <CardHeader>
-            <CardTitle className="text-base">Recent expenses</CardTitle>
-            <CardDescription>Last five.</CardDescription>
+          <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
+            <div className="space-y-1.5">
+              <CardTitle className="text-base">Recent expenses</CardTitle>
+              <CardDescription>Most recent five expenses.</CardDescription>
+            </div>
+            <Link
+              href="/expenses"
+              className="text-primary shrink-0 text-sm font-medium underline-offset-4 hover:underline"
+            >
+              View all
+            </Link>
           </CardHeader>
           <CardContent className="space-y-0">
             {recentExpense.length === 0 ? (
-              <p className="text-muted-foreground py-6 text-center text-sm">No expenses yet.</p>
+              <p className="text-muted-foreground py-6 text-center text-sm">
+                No expenses yet.{" "}
+                <Link
+                  href="/expenses"
+                  className="text-foreground font-medium underline underline-offset-2"
+                >
+                  Add an expense
+                </Link>
+                .
+              </p>
             ) : (
               recentExpense.map((row) => (
                 <div
@@ -396,16 +484,30 @@ export function DashboardView() {
                     <p className="truncate text-sm font-medium leading-snug">
                       {row.description || "Expense"}
                     </p>
-                    <p className="text-muted-foreground mt-1.5 text-xs">
+                    <div className="text-muted-foreground mt-1.5 flex flex-wrap items-center gap-1.5 text-xs">
                       <time dateTime={new Date(row.date).toISOString()}>
                         {formatDate(row.date)}
                       </time>
+                      {row.expenseStreamId ? (
+                        <Badge variant="outline" className="text-[10px] font-normal">
+                          Recurring
+                        </Badge>
+                      ) : (
+                        <Badge variant="secondary" className="text-[10px] font-normal">
+                          One-off
+                        </Badge>
+                      )}
                       {row.tag ? (
-                        <Badge variant="secondary" className="ml-2 align-middle text-[10px]">
+                        <Badge variant="secondary" className="text-[10px]">
                           {row.tag.name}
                         </Badge>
                       ) : null}
-                    </p>
+                      {row.bank ? (
+                        <Badge variant="outline" className="text-[10px] font-normal">
+                          {row.bank.name}
+                        </Badge>
+                      ) : null}
+                    </div>
                   </div>
                   <span className="text-destructive shrink-0 text-sm font-semibold tabular-nums">
                     {fmt(row.amount)}

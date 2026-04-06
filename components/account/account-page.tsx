@@ -41,7 +41,7 @@ export function AccountPage() {
   const update = trpc.profile.update.useMutation({
     onSuccess: () => {
       void utils.profile.me.invalidate();
-      toast.success("Profile updated");
+      toast.success("Profile updated.");
     },
     onError: (e) => toast.error(e.message),
   });
@@ -71,7 +71,7 @@ export function AccountPage() {
     <div className="mx-auto flex max-w-lg flex-col gap-6">
       <div>
         <h1 className="text-lg font-semibold tracking-tight">Account</h1>
-        <p className="text-muted-foreground text-sm">Profile and sign out.</p>
+        <p className="text-muted-foreground text-sm">Your profile and sign out.</p>
       </div>
 
       <Card>
@@ -104,13 +104,12 @@ export function AccountPage() {
                 <Input id="email" type="email" {...form.register("email")} />
               </div>
               <div className="flex flex-wrap gap-2">
-                <Button type="submit" size="sm" disabled={update.isPending}>
+                <Button type="submit" disabled={update.isPending}>
                   Save profile
                 </Button>
                 <Button
                   type="button"
                   variant="outline"
-                  size="sm"
                   onClick={() => void signOut({ callbackUrl: "/login" })}
                 >
                   <IconLogout className="size-4" />

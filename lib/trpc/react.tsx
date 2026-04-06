@@ -1,11 +1,12 @@
 "use client";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { httpBatchLink } from "@trpc/client";
+import { httpBatchLink, isTRPCClientError } from "@trpc/client";
 import { createTRPCReact } from "@trpc/react-query";
 import { useState } from "react";
 import superjson from "superjson";
 
+import { createUnauthorizedLink } from "@/lib/trpc/unauthorized-link";
 import type { AppRouter } from "@/server/routers/_app";
 
 export const trpc = createTRPCReact<AppRouter>();
@@ -26,6 +27,18 @@ export function TRPCProvider({ children }: { children: React.ReactNode }) {
         defaultOptions: {
           queries: {
             staleTime: 30_000,
+            retry: (failureCount, error) => {
+              if (
+                isTRPCClientError(error) &&
+                error.data?.code === "UNAUTHORIZED"
+              ) {
+                return false;
+              }
+              return failureCount < 3;
+            },
+          },
+          mutations: {
+            retry: false,
           },
         },
       }),
@@ -33,6 +46,7 @@ export function TRPCProvider({ children }: { children: React.ReactNode }) {
   const [trpcClient] = useState(() =>
     trpc.createClient({
       links: [
+        createUnauthorizedLink(queryClient),
         httpBatchLink({
           url: `${getBaseUrl()}/api/trpc`,
           transformer: superjson,

@@ -126,4 +126,24 @@
   html {
     @apply font-sans;
     }
+  a[href] {
+    @apply cursor-pointer;
+  }
+  summary {
+    @apply cursor-pointer;
+  }
+  button:not(:disabled):not([disabled]) {
+    @apply cursor-pointer;
+  }
+  button:disabled,
+  button[disabled] {
+    @apply cursor-not-allowed;
+  }
+  input[type="date"],
+  input[type="month"],
+  input[type="time"],
+  input[type="datetime-local"],
+  input[type="range"] {
+    @apply cursor-pointer;
+  }
 }

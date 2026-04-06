@@ -1,9 +1,46 @@
-export function formatCurrency(amount: number, currency = "USD") {
-  return new Intl.NumberFormat(undefined, {
-    style: "currency",
-    currency,
-    maximumFractionDigits: 2,
-  }).format(amount);
+/** Default ISO 4217 code for new users and fallbacks. */
+export const DEFAULT_CURRENCY = "PHP";
+
+function currencyLocale(currencyCode: string): string | undefined {
+  const c = currencyCode.toUpperCase();
+  if (c === "PHP") return "en-PH";
+  return undefined;
+}
+
+/** Symbol for UI labels (e.g. amount fields, table headers). */
+export function getCurrencySymbol(currencyCode: string): string {
+  const code = currencyCode.toUpperCase();
+  try {
+    return (
+      new Intl.NumberFormat(currencyLocale(code), {
+        style: "currency",
+        currency: code,
+        currencyDisplay: "narrowSymbol",
+      })
+        .formatToParts(0)
+        .find((p) => p.type === "currency")?.value ?? code
+    );
+  } catch {
+    return code;
+  }
+}
+
+export function formatCurrency(amount: number, currency: string = DEFAULT_CURRENCY) {
+  const code = currency.toUpperCase();
+  try {
+    return new Intl.NumberFormat(currencyLocale(code), {
+      style: "currency",
+      currency: code,
+      currencyDisplay: "narrowSymbol",
+      maximumFractionDigits: 2,
+    }).format(amount);
+  } catch {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: code,
+      maximumFractionDigits: 2,
+    }).format(amount);
+  }
 }
 
 export function formatDate(d: Date | string) {

@@ -21,6 +21,7 @@ model User {
   tags            Tag[]
   banks           Bank[]
   incomeStreams   IncomeStream[]
+  expenseStreams  ExpenseStream[]
   incomes         Income[]
   expenses        Expense[]
   creditCardDebts CreditCardDebt[]
@@ -71,6 +72,7 @@ model Tag {
   createdAt DateTime  @default(now())
   incomes        Income[]
   incomeStreams  IncomeStream[]
+  expenseStreams ExpenseStream[]
   expenses       Expense[]
 
   @@unique([userId, name])
@@ -85,6 +87,10 @@ model Bank {
   notes     String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  expenseStreams ExpenseStream[]
+  expenses       Expense[]
+  incomeStreams  IncomeStream[]
+  incomes        Income[]
 
   @@index([userId])
 }
@@ -122,6 +128,8 @@ model IncomeStream {
   description       String?
   tagId             String?
   tag               Tag?               @relation(fields: [tagId], references: [id], onDelete: SetNull)
+  bankId            String?
+  bank              Bank?              @relation(fields: [bankId], references: [id], onDelete: SetNull)
   isActive          Boolean            @default(true)
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
@@ -144,6 +152,8 @@ model Income {
   description    String?
   tagId          String?
   tag            Tag?          @relation(fields: [tagId], references: [id], onDelete: SetNull)
+  bankId         String?
+  bank           Bank?         @relation(fields: [bankId], references: [id], onDelete: SetNull)
   /// Only when incomeStreamId is null (manual entry).
   sourceType        IncomeSourceType?
   sourceName        String?
@@ -155,6 +165,38 @@ model Income {
   @@unique([incomeStreamId, scheduledDate])
 }
 
+/// How this expense is typically settled (for your own reference).
+enum ExpensePaymentMethod {
+  MANUAL
+  BANK_AUTO_DEBIT
+  CARD_AUTO_PAY
+}
+
+/// Monthly recurring expense template (amount, day of month, optional end date).
+model ExpenseStream {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount      Decimal
+  description String?
+  tagId       String?
+  tag         Tag?      @relation(fields: [tagId], references: [id], onDelete: SetNull)
+  bankId      String?
+  bank        Bank?     @relation(fields: [bankId], references: [id], onDelete: SetNull)
+  /// e.g. ACH debit vs card autopay vs you pay manually.
+  paymentMethod ExpensePaymentMethod @default(MANUAL)
+  /// Day of month the charge occurs (1–31; clamped to last day in month).
+  paymentDay  Int       @default(1)
+  startDate   DateTime
+  endDate     DateTime?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  expenses    Expense[]
+
+  @@index([userId])
+}
+
 model Expense {
   id          String   @id @default(cuid())
   userId      String
@@ -164,7 +206,19 @@ model Expense {
   description String?
   tagId       String?
   tag         Tag?     @relation(fields: [tagId], references: [id], onDelete: SetNull)
+  expenseStreamId String?
+  expenseStream   ExpenseStream? @relation(fields: [expenseStreamId], references: [id], onDelete: Cascade)
+  bankId      String?
+  bank        Bank?    @relation(fields: [bankId], references: [id], onDelete: SetNull)
+  /// Mirrors recurring template when generated from a stream.
+  paymentMethod ExpensePaymentMethod @default(MANUAL)
+  /// User marked this charge as paid (e.g. settled the card / bill).
+  paid        Boolean  @default(false)
   createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([date])
+  @@unique([expenseStreamId, date])
 }
 
 model CreditCardDebt {
@@ -182,6 +236,6 @@ model CreditCardDebt {
 model AppSettings {
   userId       String @id
   user         User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  currency     String @default("USD")
+  currency     String @default("PHP")
   weekStartsOn Int    @default(0)
 }

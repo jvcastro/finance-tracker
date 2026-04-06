@@ -3,14 +3,16 @@
 import { SessionProvider } from "next-auth/react";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
 
+import { AuthSessionSync } from "@/components/auth/auth-session-sync";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { TRPCProvider } from "@/lib/trpc/react";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
-    <SessionProvider>
+    <SessionProvider refetchInterval={300} refetchOnWindowFocus>
       <TRPCProvider>
+        <AuthSessionSync />
         <NuqsAdapter>
           <ThemeProvider>
             {children}

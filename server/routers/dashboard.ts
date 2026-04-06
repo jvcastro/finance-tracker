@@ -1,15 +1,99 @@
 import {
+  addDays,
   addMonths,
+  differenceInCalendarDays,
+  endOfDay,
   endOfMonth,
   format,
   isWithinInterval,
+  startOfDay,
   startOfMonth,
   subMonths,
 } from "date-fns";
 
+import { Prisma } from "@/generated/prisma/client";
+import { CREDIT_CARD_TAG_NAME } from "@/lib/default-tags";
+import { ensureExpenseRecordsRollingWindow } from "@/lib/expense-ensure";
 import { ensureIncomeRecordsRollingWindow } from "@/lib/income-ensure";
 import { sumExpectedIncomeFromStreamsInMonth } from "@/lib/income-schedule";
 import { router, protectedProcedure } from "@/server/trpc";
+
+/** Aggregates + trends: only fields used by resolveSourceType / reminder titles. */
+const incomeRecordsForTotalsSelect = {
+  id: true,
+  amount: true,
+  scheduledDate: true,
+  received: true,
+  sourceType: true,
+  salaryPaySchedule: true,
+  sourceName: true,
+  description: true,
+  incomeStreamId: true,
+  tagId: true,
+  tag: { select: { id: true, name: true, color: true } },
+  incomeStream: {
+    select: {
+      sourceType: true,
+      salaryPaySchedule: true,
+      sourceName: true,
+    },
+  },
+} satisfies Prisma.IncomeSelect;
+
+const expenseWithTagSelect = {
+  id: true,
+  date: true,
+  amount: true,
+  tagId: true,
+  tag: { select: { id: true, name: true, color: true } },
+} satisfies Prisma.ExpenseSelect;
+
+const dashboardRecentIncomeSelect = {
+  id: true,
+  incomeStreamId: true,
+  scheduledDate: true,
+  amount: true,
+  received: true,
+  description: true,
+  sourceType: true,
+  sourceName: true,
+  salaryPaySchedule: true,
+  tag: { select: { name: true } },
+  bank: { select: { name: true } },
+  incomeStream: {
+    select: {
+      sourceType: true,
+      sourceName: true,
+      salaryPaySchedule: true,
+    },
+  },
+} satisfies Prisma.IncomeSelect;
+
+const dashboardRecentExpenseSelect = {
+  id: true,
+  date: true,
+  amount: true,
+  description: true,
+  expenseStreamId: true,
+  tag: { select: { name: true } },
+  bank: { select: { name: true } },
+} satisfies Prisma.ExpenseSelect;
+
+const incomeReminderRowSelect = {
+  id: true,
+  scheduledDate: true,
+  amount: true,
+  description: true,
+  sourceName: true,
+  incomeStream: { select: { sourceName: true } },
+} satisfies Prisma.IncomeSelect;
+
+const expenseReminderRowSelect = {
+  id: true,
+  date: true,
+  amount: true,
+  description: true,
+} satisfies Prisma.ExpenseSelect;
 
 function sumInMonth<T extends { date: Date; amount: unknown }>(
   rows: T[],
@@ -47,41 +131,58 @@ function resolveSalarySchedule(row: IncomeRecordWithStream) {
   return row.incomeStream?.salaryPaySchedule ?? row.salaryPaySchedule;
 }
 
+function incomeReminderTitle(r: {
+  description: string | null;
+  sourceName: string | null;
+  incomeStream: { sourceName: string | null } | null;
+}) {
+  const fromStream = r.incomeStream?.sourceName?.trim();
+  const manual = r.sourceName?.trim();
+  if (fromStream) return fromStream;
+  if (manual) return manual;
+  return r.description?.trim() || "Income";
+}
+
+/** Sum of expenses with the default “Credit card” tag (not a second ledger). */
+function sumCreditCardTaggedExpensesInRange(
+  rows: Array<{ date: Date; amount: unknown; tag: { name: string } | null }>,
+  range: { start: Date; end: Date },
+) {
+  return rows.reduce((s, r) => {
+    if (r.tag?.name !== CREDIT_CARD_TAG_NAME) return s;
+    if (!isWithinInterval(r.date, range)) return s;
+    return s + Number(r.amount);
+  }, 0);
+}
+
+function sumCreditCardTaggedExpensesAllTime(
+  rows: Array<{ amount: unknown; tag: { name: string } | null }>,
+) {
+  return rows.reduce((s, r) => {
+    if (r.tag?.name !== CREDIT_CARD_TAG_NAME) return s;
+    return s + Number(r.amount);
+  }, 0);
+}
+
 export const dashboardRouter = router({
   summary: protectedProcedure.query(async ({ ctx }) => {
     const userId = ctx.session!.user!.id;
     await ensureIncomeRecordsRollingWindow(ctx.prisma, userId);
+    await ensureExpenseRecordsRollingWindow(ctx.prisma, userId);
 
     const now = new Date();
     const monthStart = startOfMonth(now);
     const monthEnd = endOfMonth(now);
 
-    const [
-      incomeRecords,
-      incomeStreams,
-      expenses,
-      debts,
-      expenseMonth,
-      debtMonth,
-    ] = await Promise.all([
+    const [incomeRecords, incomeStreams, expenses] = await Promise.all([
       ctx.prisma.income.findMany({
         where: { userId },
-        include: { incomeStream: true, tag: true },
+        select: incomeRecordsForTotalsSelect,
       }),
       ctx.prisma.incomeStream.findMany({ where: { userId, isActive: true } }),
-      ctx.prisma.expense.findMany({ where: { userId } }),
-      ctx.prisma.creditCardDebt.findMany({ where: { userId } }),
       ctx.prisma.expense.findMany({
-        where: {
-          userId,
-          date: { gte: monthStart, lte: monthEnd },
-        },
-      }),
-      ctx.prisma.creditCardDebt.findMany({
-        where: {
-          userId,
-          date: { gte: monthStart, lte: monthEnd },
-        },
+        where: { userId },
+        select: expenseWithTagSelect,
       }),
     ]);
 
@@ -91,24 +192,26 @@ export const dashboardRouter = router({
 
     const totalIncome = incomeRecords.reduce((s, i) => s + Number(i.amount), 0);
     const totalExpense = expenses.reduce((s, e) => s + Number(e.amount), 0);
-    const totalDebtPayments = debts.reduce((s, d) => s + Number(d.amount), 0);
+    const totalDebtPayments = sumCreditCardTaggedExpensesAllTime(expenses);
 
     const incomeThisMonth = recordsThisMonth.reduce(
       (s, i) => s + Number(i.amount),
       0,
     );
-    const expenseThisMonth = expenseMonth.reduce(
+    const expenseThisMonthRows = expenses.filter((e) =>
+      isWithinInterval(e.date, { start: monthStart, end: monthEnd }),
+    );
+    const expenseThisMonth = expenseThisMonthRows.reduce(
       (s, e) => s + Number(e.amount),
       0,
     );
-    const debtPaymentsThisMonth = debtMonth.reduce(
-      (s, d) => s + Number(d.amount),
-      0,
+    const debtPaymentsThisMonth = sumCreditCardTaggedExpensesInRange(
+      expenses,
+      { start: monthStart, end: monthEnd },
     );
 
-    const netLifetime = totalIncome - totalExpense - totalDebtPayments;
-    const netThisMonth =
-      incomeThisMonth - expenseThisMonth - debtPaymentsThisMonth;
+    const netLifetime = totalIncome - totalExpense;
+    const netThisMonth = incomeThisMonth - expenseThisMonth;
 
     const incomeBySourceThisMonth = {
       SALARY: 0,
@@ -142,6 +245,63 @@ export const dashboardRouter = router({
       }
     }
 
+    const UNTAGGED_KEY = "__untagged__";
+
+    const tagFlowMap = new Map<
+      string,
+      {
+        tagId: string;
+        name: string;
+        color: string | null;
+        income: number;
+        expense: number;
+      }
+    >();
+
+    function ensureTagRow(
+      key: string,
+      tagId: string,
+      name: string,
+      color: string | null,
+    ) {
+      if (!tagFlowMap.has(key)) {
+        tagFlowMap.set(key, {
+          tagId,
+          name,
+          color,
+          income: 0,
+          expense: 0,
+        });
+      }
+      return tagFlowMap.get(key)!;
+    }
+
+    for (const row of recordsThisMonth) {
+      const a = Number(row.amount);
+      const key = row.tag && row.tagId ? row.tag.id : UNTAGGED_KEY;
+      const name = row.tag?.name ?? "Untagged";
+      const color = row.tag?.color ?? null;
+      const id = row.tag?.id ?? "";
+      ensureTagRow(key, id, name, color).income += a;
+    }
+
+    for (const row of expenseThisMonthRows) {
+      const a = Number(row.amount);
+      const key = row.tag && row.tagId ? row.tag.id : UNTAGGED_KEY;
+      const name = row.tag?.name ?? "Untagged";
+      const color = row.tag?.color ?? null;
+      const id = row.tag?.id ?? "";
+      ensureTagRow(key, id, name, color).expense += a;
+    }
+
+    const tagFlowThisMonth = Array.from(tagFlowMap.values())
+      .filter((x) => x.income > 0 || x.expense > 0)
+      .sort((a, b) => {
+        const vol = b.income + b.expense - (a.income + a.expense);
+        if (vol !== 0) return vol;
+        return a.name.localeCompare(b.name);
+      });
+
     const monthlyTrend: Array<{
       key: string;
       label: string;
@@ -163,7 +323,10 @@ export const dashboardRouter = router({
         label: format(ms, "MMM yyyy"),
         income: incomeForMonth,
         expense: sumInMonth(expenses, ms, me),
-        debtPayments: sumInMonth(debts, ms, me),
+        debtPayments: sumCreditCardTaggedExpensesInRange(expenses, {
+          start: ms,
+          end: me,
+        }),
       });
     }
 
@@ -188,15 +351,101 @@ export const dashboardRouter = router({
       where: { userId },
       orderBy: [{ scheduledDate: "desc" }, { createdAt: "desc" }],
       take: 5,
-      include: { tag: true, incomeStream: true },
+      select: dashboardRecentIncomeSelect,
     });
 
     const recentExpense = await ctx.prisma.expense.findMany({
       where: { userId },
       orderBy: { date: "desc" },
       take: 5,
-      include: { tag: true },
+      select: dashboardRecentExpenseSelect,
     });
+
+    const todayStart = startOfDay(now);
+    const weekEnd = endOfDay(addDays(now, 7));
+
+    const [
+      overdueIncomeRows,
+      overdueExpenseRows,
+      dueSoonIncomeRows,
+      dueSoonExpenseRows,
+    ] = await Promise.all([
+      ctx.prisma.income.findMany({
+        where: {
+          userId,
+          received: false,
+          scheduledDate: { lt: todayStart },
+        },
+        orderBy: { scheduledDate: "asc" },
+        take: 25,
+        select: incomeReminderRowSelect,
+      }),
+      ctx.prisma.expense.findMany({
+        where: {
+          userId,
+          paid: false,
+          date: { lt: todayStart },
+        },
+        orderBy: { date: "asc" },
+        take: 25,
+        select: expenseReminderRowSelect,
+      }),
+      ctx.prisma.income.findMany({
+        where: {
+          userId,
+          received: false,
+          scheduledDate: { gte: todayStart, lte: weekEnd },
+        },
+        orderBy: { scheduledDate: "asc" },
+        take: 15,
+        select: incomeReminderRowSelect,
+      }),
+      ctx.prisma.expense.findMany({
+        where: {
+          userId,
+          paid: false,
+          date: { gte: todayStart, lte: weekEnd },
+        },
+        orderBy: { date: "asc" },
+        take: 15,
+        select: expenseReminderRowSelect,
+      }),
+    ]);
+
+    const overdueIncome = overdueIncomeRows.map((r) => ({
+      id: r.id,
+      scheduledDate: r.scheduledDate,
+      amount: Number(r.amount),
+      title: incomeReminderTitle(r),
+      daysOverdue: differenceInCalendarDays(todayStart, startOfDay(r.scheduledDate)),
+    }));
+
+    const overdueExpenses = overdueExpenseRows.map((r) => ({
+      id: r.id,
+      date: r.date,
+      amount: Number(r.amount),
+      title: r.description?.trim() || "Expense",
+      daysOverdue: differenceInCalendarDays(todayStart, startOfDay(r.date)),
+    }));
+
+    const dueSoonIncome = dueSoonIncomeRows.map((r) => ({
+      id: r.id,
+      scheduledDate: r.scheduledDate,
+      amount: Number(r.amount),
+      title: incomeReminderTitle(r),
+      daysUntil: differenceInCalendarDays(
+        startOfDay(r.scheduledDate),
+        todayStart,
+      ),
+    }));
+
+    const dueSoonExpenses = dueSoonExpenseRows.map((r) => ({
+      id: r.id,
+      date: r.date,
+      amount: Number(r.amount),
+      title: r.description?.trim() || "Expense",
+      daysUntil: differenceInCalendarDays(startOfDay(r.date), todayStart),
+    }));
 
     return {
       totals: {
@@ -216,6 +465,7 @@ export const dashboardRouter = router({
         byReceived: incomeByReceivedThisMonth,
         salaryBySchedule: salaryByScheduleThisMonth,
       },
+      tagFlowThisMonth,
       monthlyTrend,
       incomeForecastMonths,
       recentIncome: recentIncome.map((r) => ({
@@ -226,6 +476,12 @@ export const dashboardRouter = router({
         ...r,
         amount: Number(r.amount),
       })),
+      reminders: {
+        overdueIncome,
+        overdueExpenses,
+        dueSoonIncome,
+        dueSoonExpenses,
+      },
     };
   }),
 });

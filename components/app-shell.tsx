@@ -11,6 +11,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useCurrencyFormatter } from "@/hooks/use-currency-formatter";
 import { cn } from "@/lib/utils";
 
 const nav = [
@@ -97,15 +98,34 @@ function MobileBottomNav() {
   );
 }
 
+function SidebarBrand() {
+  const fmt = useCurrencyFormatter();
+  return (
+    <div className="flex h-12 flex-col justify-center border-b border-sidebar-border px-3 py-1.5">
+      <Link href="/" className="font-semibold leading-tight tracking-tight">
+        Finance Tracker
+      </Link>
+      <p className="text-muted-foreground text-[0.625rem] font-medium tabular-nums">
+        {fmt.symbol} {fmt.code}
+      </p>
+    </div>
+  );
+}
+
+function MobileCurrencyBadge() {
+  const fmt = useCurrencyFormatter();
+  return (
+    <div className="bg-muted/30 text-muted-foreground border-b border-border px-4 py-1.5 text-center text-[0.625rem] font-medium tabular-nums md:hidden">
+      {fmt.symbol} {fmt.code}
+    </div>
+  );
+}
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-svh w-full">
       <aside className="bg-sidebar text-sidebar-foreground hidden w-52 shrink-0 flex-col border-r border-sidebar-border md:flex">
-        <div className="flex h-12 items-center border-b border-sidebar-border px-3">
-          <Link href="/" className="font-semibold tracking-tight">
-            Finance Tracker
-          </Link>
-        </div>
+        <SidebarBrand />
         <ScrollArea className="flex-1 px-2 py-3">
           <NavLinks />
         </ScrollArea>
@@ -115,6 +135,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
+        <MobileCurrencyBadge />
         <main className="flex-1 p-4 pb-[calc(5rem+env(safe-area-inset-bottom))] md:p-6 md:pb-6">
           {children}
         </main>

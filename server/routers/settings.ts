@@ -10,7 +10,7 @@ export const settingsRouter = router({
     });
     if (!row) {
       row = await ctx.prisma.appSettings.create({
-        data: { userId, currency: "USD", weekStartsOn: 0 },
+        data: { userId, currency: "PHP", weekStartsOn: 0 },
       });
     }
     return row;

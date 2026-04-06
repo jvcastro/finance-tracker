@@ -2,6 +2,7 @@ import { TRPCError } from "@trpc/server";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 
+import { ensureDefaultTagsForUser } from "@/lib/default-tags";
 import { router, publicProcedure } from "@/server/trpc";
 
 export const authRegisterRouter = router({
@@ -23,13 +24,15 @@ export const authRegisterRouter = router({
         });
       }
       const passwordHash = await bcrypt.hash(input.password, 12);
-      await ctx.prisma.user.create({
+      const user = await ctx.prisma.user.create({
         data: {
           email,
           name: input.name?.trim() || null,
           passwordHash,
         },
+        select: { id: true },
       });
+      await ensureDefaultTagsForUser(ctx.prisma, user.id);
       return { ok: true as const };
     }),
 });

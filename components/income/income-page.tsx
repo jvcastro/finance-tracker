@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { zodResolver } from "@/lib/zod-resolver";
 import {
   IconCalendarMonth,
@@ -63,6 +64,7 @@ const streamFormSchema = z
     paymentDay: z.coerce.number().int().min(1).max(31),
     secondPaymentDay: z.coerce.number().int().min(1).max(31).optional(),
     tagId: z.string().optional(),
+    bankId: z.string().optional(),
     isActive: z.boolean(),
   })
   .superRefine((data, ctx) => {
@@ -87,7 +89,7 @@ const streamFormSchema = z
     if (data.sourceType !== "SALARY" && data.salaryPaySchedule) {
       ctx.addIssue({
         code: "custom",
-        message: "Pay schedule applies only to company salary.",
+        message: "Pay schedule applies only to salary.",
         path: ["salaryPaySchedule"],
       });
     }
@@ -98,7 +100,7 @@ const streamFormSchema = z
     ) {
       ctx.addIssue({
         code: "custom",
-        message: "Add a second pay day (e.g. 30).",
+        message: "Add a second payment day (for example, 30).",
         path: ["secondPaymentDay"],
       });
     }
@@ -110,7 +112,7 @@ const streamFormSchema = z
     ) {
       ctx.addIssue({
         code: "custom",
-        message: "Use two different days (e.g. 15 and 30).",
+        message: "Use two different days (for example, 15 and 30).",
         path: ["secondPaymentDay"],
       });
     }
@@ -132,6 +134,8 @@ type StreamRow = {
   isActive: boolean;
   tagId: string | null;
   tag: { id: string; name: string } | null;
+  bankId: string | null;
+  bank: { id: string; name: string } | null;
 };
 
 const SOURCE_LABEL: Record<StreamRow["sourceType"], string> = {
@@ -154,6 +158,7 @@ const recordEditSchema = z.object({
   received: z.boolean(),
   description: z.string().optional(),
   tagId: z.string().optional(),
+  bankId: z.string().optional(),
 });
 
 const manualSchema = z
@@ -166,6 +171,7 @@ const manualSchema = z
     description: z.string().optional(),
     received: z.boolean(),
     tagId: z.string().optional(),
+    bankId: z.string().optional(),
   })
   .superRefine((data, ctx) => {
     if (data.sourceType === "SALARY" && !data.salaryPaySchedule) {
@@ -195,6 +201,8 @@ type RecordRow = {
   sourceName: string | null;
   salaryPaySchedule: "MONTHLY" | "BI_WEEKLY" | "ONE_OFF" | null;
   tag: { id: string; name: string } | null;
+  bankId: string | null;
+  bank: { id: string; name: string } | null;
   incomeStream: {
     sourceType: string;
     sourceName: string | null;
@@ -258,7 +266,7 @@ export function IncomePage() {
     onSuccess: () => {
       void utils.income.stream.list.invalidate();
       void utils.dashboard.summary.invalidate();
-      toast.success("Recurring income saved");
+      toast.success("Recurring income saved.");
     },
     onError: (e) => toast.error(e.message),
   });
@@ -266,7 +274,7 @@ export function IncomePage() {
     onSuccess: () => {
       void utils.income.stream.list.invalidate();
       void utils.dashboard.summary.invalidate();
-      toast.success("Updated");
+      toast.success("Recurring income updated.");
     },
     onError: (e) => toast.error(e.message),
   });
@@ -275,7 +283,7 @@ export function IncomePage() {
       void utils.income.stream.list.invalidate();
       void utils.income.record.list.invalidate();
       void utils.dashboard.summary.invalidate();
-      toast.success("Removed");
+      toast.success("Recurring income deleted.");
     },
     onError: (e) => toast.error(e.message),
   });
@@ -284,7 +292,7 @@ export function IncomePage() {
     onSuccess: () => {
       void utils.income.record.list.invalidate();
       void utils.dashboard.summary.invalidate();
-      toast.success("Monthly rows synced");
+      toast.success("Month synced.");
     },
     onError: (e) => toast.error(e.message),
   });
@@ -293,7 +301,7 @@ export function IncomePage() {
     onSuccess: () => {
       void utils.income.record.list.invalidate();
       void utils.dashboard.summary.invalidate();
-      toast.success("Record added");
+      toast.success("Payment added.");
     },
     onError: (e) => toast.error(e.message),
   });
@@ -301,7 +309,7 @@ export function IncomePage() {
     onSuccess: () => {
       void utils.income.record.list.invalidate();
       void utils.dashboard.summary.invalidate();
-      toast.success("Updated");
+      toast.success("Payment updated.");
     },
     onError: (e) => toast.error(e.message),
   });
@@ -309,12 +317,13 @@ export function IncomePage() {
     onSuccess: () => {
       void utils.income.record.list.invalidate();
       void utils.dashboard.summary.invalidate();
-      toast.success("Deleted");
+      toast.success("Payment deleted.");
     },
     onError: (e) => toast.error(e.message),
   });
 
   const { data: tags = [] } = trpc.tag.list.useQuery();
+  const { data: banks = [] } = trpc.bank.list.useQuery();
 
   const [streamOpen, setStreamOpen] = React.useState(false);
   const [editingStream, setEditingStream] = React.useState<StreamRow | null>(
@@ -341,6 +350,7 @@ export function IncomePage() {
       paymentDay: 15,
       secondPaymentDay: 30,
       tagId: "",
+      bankId: "",
       isActive: true,
     },
   });
@@ -363,6 +373,7 @@ export function IncomePage() {
         paymentDay: editingStream.paymentDay,
         secondPaymentDay: editingStream.secondPaymentDay ?? 30,
         tagId: editingStream.tagId ?? "",
+        bankId: editingStream.bankId ?? "",
         isActive: editingStream.isActive,
       });
     } else {
@@ -377,6 +388,7 @@ export function IncomePage() {
         paymentDay: 15,
         secondPaymentDay: 30,
         tagId: "",
+        bankId: "",
         isActive: true,
       });
     }
@@ -384,7 +396,13 @@ export function IncomePage() {
 
   const recordForm = useForm<z.infer<typeof recordEditSchema>>({
     resolver: zodResolver(recordEditSchema),
-    defaultValues: { amount: 0, received: false, description: "", tagId: "" },
+    defaultValues: {
+      amount: 0,
+      received: false,
+      description: "",
+      tagId: "",
+      bankId: "",
+    },
   });
 
   React.useEffect(() => {
@@ -394,6 +412,7 @@ export function IncomePage() {
         received: editingRecord.received,
         description: editingRecord.description ?? "",
         tagId: editingRecord.tag?.id ?? "",
+        bankId: editingRecord.bankId ?? "",
       });
     }
   }, [editingRecord, recordForm, recordOpen]);
@@ -409,6 +428,7 @@ export function IncomePage() {
       description: "",
       received: false,
       tagId: "",
+      bankId: "",
     },
   });
 
@@ -435,6 +455,7 @@ export function IncomePage() {
       paymentDay: values.paymentDay,
       secondPaymentDay: isBiWeekly ? values.secondPaymentDay ?? null : null,
       tagId: values.tagId || null,
+      bankId: values.bankId || null,
       isActive: values.isActive,
     };
     if (editingStream) {
@@ -454,6 +475,7 @@ export function IncomePage() {
       received: values.received,
       description: values.description || null,
       tagId: values.tagId || null,
+      bankId: values.bankId || null,
     });
     setRecordOpen(false);
     setEditingRecord(null);
@@ -473,6 +495,7 @@ export function IncomePage() {
       description: values.description || undefined,
       received: values.received,
       tagId: values.tagId || null,
+      bankId: values.bankId || null,
     });
     setManualOpen(false);
   }
@@ -501,7 +524,7 @@ export function IncomePage() {
     },
     {
       id: "payDays",
-      header: "Pay days",
+      header: "Payment days",
       meta: { className: "hidden md:table-cell" },
       cell: ({ row }) => formatStreamPayDays(row.original),
     },
@@ -518,8 +541,18 @@ export function IncomePage() {
       cell: ({ row }) => row.original.tag?.name ?? "—",
     },
     {
+      id: "bank",
+      header: "Bank",
+      meta: { className: "hidden lg:table-cell" },
+      cell: ({ row }) => row.original.bank?.name ?? "—",
+    },
+    {
       accessorKey: "amount",
-      header: () => <div className="text-right">Amount</div>,
+      header: () => (
+        <div className="text-right">
+          Amount ({fmt.symbol})
+        </div>
+      ),
       cell: ({ row }) => (
         <div className="text-chart-2 text-right font-medium tabular-nums">
           {fmt(row.original.amount)}
@@ -608,6 +641,12 @@ export function IncomePage() {
       cell: ({ row }) => SOURCE_LABEL[resolveRecordSourceType(row.original)],
     },
     {
+      id: "bank",
+      header: "Bank",
+      meta: { className: "hidden lg:table-cell" },
+      cell: ({ row }) => row.original.bank?.name ?? "—",
+    },
+    {
       id: "status",
       header: "Status",
       cell: ({ row }) =>
@@ -626,7 +665,11 @@ export function IncomePage() {
     },
     {
       accessorKey: "amount",
-      header: () => <div className="text-right">Amount</div>,
+      header: () => (
+        <div className="text-right">
+          Amount ({fmt.symbol})
+        </div>
+      ),
       cell: ({ row }) => (
         <div className="text-chart-2 text-right font-medium tabular-nums">
           {fmt(row.original.amount)}
@@ -652,6 +695,7 @@ export function IncomePage() {
                   received: !r.received,
                   description: r.description,
                   tagId: r.tag?.id ?? null,
+                  bankId: r.bankId ?? null,
                 });
               }}
             >
@@ -695,9 +739,9 @@ export function IncomePage() {
         <div>
           <h1 className="text-lg font-semibold tracking-tight">Income</h1>
           <p className="text-muted-foreground text-sm">
-            <span className="text-foreground">Recurring</span> = pay rules.{" "}
-            <span className="text-foreground">Records</span> = paydays (filled automatically). Mark
-            received when paid.
+            <span className="text-foreground">Recurring</span> is your expected pay schedule.{" "}
+            <span className="text-foreground">Payment records</span> list pay dates (filled
+            automatically). Mark as received when the deposit clears.
           </p>
         </div>
       </div>
@@ -711,7 +755,7 @@ export function IncomePage() {
       >
         <TabsList className="grid w-full max-w-md grid-cols-2">
           <TabsTrigger value="records">Payment records</TabsTrigger>
-          <TabsTrigger value="streams">Recurring setup</TabsTrigger>
+          <TabsTrigger value="streams">Recurring</TabsTrigger>
         </TabsList>
 
         <TabsContent value="records" className="mt-4">
@@ -749,22 +793,20 @@ export function IncomePage() {
               </Button>
               <Button
                 variant="secondary"
-                size="sm"
                 disabled={generateMut.isPending}
                 onClick={() => generateMut.mutate({ month: monthDate })}
-                title="Add any missing rows for this month"
+                title="Create any missing payment rows for this month"
               >
                 Sync month
               </Button>
             </div>
             <Button
-              size="sm"
               onClick={() => {
                 setManualOpen(true);
               }}
             >
               <IconPlus className="size-4" />
-              Add manual record
+              Add manual payment
             </Button>
           </div>
 
@@ -774,7 +816,7 @@ export function IncomePage() {
             <DataTable
               columns={recordColumns}
               data={records as RecordRow[]}
-              mobileScrollHint="Swipe sideways for more columns, or rotate your device."
+              mobileScrollHint="Swipe sideways to see all columns."
               globalFilter={q}
               onGlobalFilterChange={setQ}
             />
@@ -786,7 +828,6 @@ export function IncomePage() {
           <div className="flex flex-col gap-4">
           <div className="flex justify-end">
             <Button
-              size="sm"
               onClick={() => {
                 setEditingStream(null);
                 setStreamOpen(true);
@@ -802,7 +843,7 @@ export function IncomePage() {
             <DataTable
               columns={streamColumns}
               data={streams as StreamRow[]}
-              mobileScrollHint="Swipe sideways for more columns, or rotate your device."
+              mobileScrollHint="Swipe sideways to see all columns."
               globalFilter={q}
               onGlobalFilterChange={setQ}
             />
@@ -829,9 +870,9 @@ export function IncomePage() {
             onSubmit={streamForm.handleSubmit(onStreamSubmit)}
           >
             <div className="grid gap-2">
-              <Label htmlFor="s-amount">Amount</Label>
+              <Label htmlFor="s-amount">Amount ({fmt.symbol})</Label>
               <p className="text-muted-foreground -mt-1 text-xs">
-                Gross per month or per paycheck (bi-weekly).
+                Gross per month, or per paycheck if you are paid biweekly.
               </p>
               <Input
                 id="s-amount"
@@ -867,8 +908,10 @@ export function IncomePage() {
             </div>
             {streamForm.watch("sourceType") !== "SALARY" ? (
               <div className="grid gap-2">
-                <Label htmlFor="s-payday">Pay day of month</Label>
-                <p className="text-muted-foreground -mt-1 text-xs">1–31 (short months clamp).</p>
+                <Label htmlFor="s-payday">Day of month</Label>
+                <p className="text-muted-foreground -mt-1 text-xs">
+                  1–31 (short months use the last day).
+                </p>
                 <Input
                   id="s-payday"
                   type="number"
@@ -888,7 +931,7 @@ export function IncomePage() {
             </div>
             {streamForm.watch("sourceType") === "SALARY" ? (
               <div className="grid gap-2">
-                <Label>Employer pay schedule</Label>
+                <Label>Pay schedule</Label>
                 <Select
                   value={streamForm.watch("salaryPaySchedule") ?? "MONTHLY"}
                   onValueChange={(v) => {
@@ -915,7 +958,7 @@ export function IncomePage() {
             streamForm.watch("salaryPaySchedule") === "BI_WEEKLY" ? (
               <div className="grid grid-cols-2 gap-3">
                 <div className="grid gap-2">
-                  <Label htmlFor="s-pay1">First pay day</Label>
+                  <Label htmlFor="s-pay1">First payment day</Label>
                   <Input
                     id="s-pay1"
                     type="number"
@@ -925,7 +968,7 @@ export function IncomePage() {
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="s-pay2">Second pay day</Label>
+                  <Label htmlFor="s-pay2">Second payment day</Label>
                   <Input
                     id="s-pay2"
                     type="number"
@@ -937,9 +980,9 @@ export function IncomePage() {
               </div>
             ) : streamForm.watch("sourceType") === "SALARY" ? (
               <div className="grid gap-2">
-                <Label htmlFor="s-payday-salary">Pay day of month</Label>
+                <Label htmlFor="s-payday-salary">Day of month</Label>
                 <p className="text-muted-foreground -mt-1 text-xs">
-                  1–31. One-off: first on/after start.
+                  1–31. One-off: first on or after the start date.
                 </p>
                 <Input
                   id="s-payday-salary"
@@ -961,11 +1004,11 @@ export function IncomePage() {
               <Input id="s-name" {...streamForm.register("sourceName")} />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="s-desc">Description</Label>
+              <Label htmlFor="s-desc">Description (optional)</Label>
               <Input id="s-desc" {...streamForm.register("description")} />
             </div>
             <div className="grid gap-2">
-              <Label>Tag</Label>
+              <Label>Tag (optional)</Label>
               <Select
                 value={streamForm.watch("tagId") || "__none__"}
                 onValueChange={(v) =>
@@ -973,7 +1016,7 @@ export function IncomePage() {
                 }
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Optional" />
+                  <SelectValue placeholder="None" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__none__">None</SelectItem>
@@ -984,6 +1027,34 @@ export function IncomePage() {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label>Bank (optional)</Label>
+              <Select
+                value={streamForm.watch("bankId") || "__none__"}
+                onValueChange={(v) =>
+                  streamForm.setValue("bankId", v === "__none__" ? "" : v)
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="None" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">None</SelectItem>
+                  {banks.map((b) => (
+                    <SelectItem key={b.id} value={b.id}>
+                      {b.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-muted-foreground text-xs">
+                Add or manage banks in{" "}
+                <Link href="/settings" className="underline underline-offset-2">
+                  Settings
+                </Link>
+                .
+              </p>
             </div>
             <div className="flex items-start gap-3 rounded-md border border-border/80 bg-muted/30 px-3 py-2.5">
               <Checkbox
@@ -997,7 +1068,9 @@ export function IncomePage() {
                 <Label htmlFor="s-active" className="font-normal">
                   Active
                 </Label>
-                <p className="text-muted-foreground text-xs">Off: no new rows, no forecast.</p>
+                <p className="text-muted-foreground text-xs">
+                  When off, no new payment rows or forecast amounts.
+                </p>
               </div>
             </div>
             <DialogFooter>
@@ -1021,7 +1094,7 @@ export function IncomePage() {
       >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Edit payment record</DialogTitle>
+            <DialogTitle>Edit payment</DialogTitle>
           </DialogHeader>
           {editingRecord ? (
             <form
@@ -1031,10 +1104,10 @@ export function IncomePage() {
               <p className="text-muted-foreground text-xs">
                 {formatDate(editingRecord.scheduledDate)} ·{" "}
                 {SOURCE_LABEL[resolveRecordSourceType(editingRecord)]}
-                {editingRecord.incomeStreamId ? " · from recurring" : " · manual"}
+                {editingRecord.incomeStreamId ? " · Recurring" : " · Manual"}
               </p>
               <div className="grid gap-2">
-                <Label htmlFor="r-amount">Amount</Label>
+                <Label htmlFor="r-amount">Amount ({fmt.symbol})</Label>
                 <Input
                   id="r-amount"
                   type="number"
@@ -1055,15 +1128,17 @@ export function IncomePage() {
                   <Label htmlFor="r-received" className="font-normal">
                     Received
                   </Label>
-                  <p className="text-muted-foreground text-xs">Money in your account.</p>
+                  <p className="text-muted-foreground text-xs">
+                    Turn on when the funds have cleared in your account.
+                  </p>
                 </div>
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="r-desc">Note</Label>
+                <Label htmlFor="r-desc">Description (optional)</Label>
                 <Input id="r-desc" {...recordForm.register("description")} />
               </div>
               <div className="grid gap-2">
-                <Label>Tag</Label>
+                <Label>Tag (optional)</Label>
                 <Select
                   value={recordForm.watch("tagId") || "__none__"}
                   onValueChange={(v) =>
@@ -1071,7 +1146,7 @@ export function IncomePage() {
                   }
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Optional" />
+                    <SelectValue placeholder="None" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__none__">None</SelectItem>
@@ -1082,6 +1157,34 @@ export function IncomePage() {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label>Bank (optional)</Label>
+                <Select
+                  value={recordForm.watch("bankId") || "__none__"}
+                  onValueChange={(v) =>
+                    recordForm.setValue("bankId", v === "__none__" ? "" : v)
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="None" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">None</SelectItem>
+                    {banks.map((b) => (
+                      <SelectItem key={b.id} value={b.id}>
+                        {b.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-muted-foreground text-xs">
+                  Add or manage banks in{" "}
+                  <Link href="/settings" className="underline underline-offset-2">
+                    Settings
+                  </Link>
+                  .
+                </p>
               </div>
               <DialogFooter>
                 <Button type="submit" disabled={updateRecordMut.isPending}>
@@ -1096,7 +1199,7 @@ export function IncomePage() {
       <Dialog open={manualOpen} onOpenChange={setManualOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Manual income record</DialogTitle>
+            <DialogTitle>Add manual payment</DialogTitle>
           </DialogHeader>
           <form
             className="grid gap-3"
@@ -1111,7 +1214,7 @@ export function IncomePage() {
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="m-amount">Amount</Label>
+              <Label htmlFor="m-amount">Amount ({fmt.symbol})</Label>
               <Input
                 id="m-amount"
                 type="number"
@@ -1174,7 +1277,7 @@ export function IncomePage() {
               <Input id="m-name" {...manualForm.register("sourceName")} />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="m-desc">Description</Label>
+              <Label htmlFor="m-desc">Description (optional)</Label>
               <Input id="m-desc" {...manualForm.register("description")} />
             </div>
             <div className="flex items-start gap-3 rounded-md border border-border/80 bg-muted/30 px-3 py-2.5">
@@ -1192,7 +1295,7 @@ export function IncomePage() {
               </div>
             </div>
             <div className="grid gap-2">
-              <Label>Tag</Label>
+              <Label>Tag (optional)</Label>
               <Select
                 value={manualForm.watch("tagId") || "__none__"}
                 onValueChange={(v) =>
@@ -1200,17 +1303,45 @@ export function IncomePage() {
                 }
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Optional" />
+                  <SelectValue placeholder="None" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__none__">None</SelectItem>
                   {tags.map((t) => (
                     <SelectItem key={t.id} value={t.id}>
                       {t.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+            <div className="grid gap-2">
+              <Label>Bank (optional)</Label>
+              <Select
+                value={manualForm.watch("bankId") || "__none__"}
+                onValueChange={(v) =>
+                  manualForm.setValue("bankId", v === "__none__" ? "" : v)
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="None" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">None</SelectItem>
+                  {banks.map((b) => (
+                    <SelectItem key={b.id} value={b.id}>
+                      {b.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              <p className="text-muted-foreground text-xs">
+                Add or manage banks in{" "}
+                <Link href="/settings" className="underline underline-offset-2">
+                  Settings
+                </Link>
+                .
+              </p>
             </div>
             <DialogFooter>
               <Button type="submit" disabled={createManualMut.isPending}>

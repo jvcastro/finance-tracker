@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import {
   Bar,
   BarChart,
@@ -56,7 +57,7 @@ export function CashFlowTrendChart({
     <div
       className="h-[min(22rem,50vh)] w-full min-h-[220px]"
       role="img"
-      aria-label="Cash flow over the last six months: income, expenses, and card payments"
+      aria-label="Cash flow over the last six months: income, all expenses, and credit card–tagged expenses"
     >
       <ResponsiveContainer width="100%" height="100%">
         <BarChart
@@ -127,7 +128,7 @@ export function CashFlowTrendChart({
           />
           <Bar
             dataKey="debtPayments"
-            name="Card payments"
+            name="Credit card"
             fill="var(--chart-5)"
             radius={[4, 4, 0, 0]}
             maxBarSize={36}
@@ -156,7 +157,14 @@ export function IncomeForecastChart({
   if (!hasAny) {
     return (
       <p className="text-muted-foreground py-10 text-center text-sm">
-        Add streams under Income → Recurring to see this chart.
+        Add recurring income on the{" "}
+        <Link
+          href="/income?tab=streams"
+          className="text-foreground font-medium underline underline-offset-2"
+        >
+          Income
+        </Link>{" "}
+        page (Recurring tab) to see this chart.
       </p>
     );
   }
@@ -208,7 +216,7 @@ export function IncomeForecastChart({
                     {formatMoney(Number(payload[0].value))}
                   </p>
                   <p className="text-muted-foreground mt-1 text-[10px]">
-                    Streams active this month.
+                    Recurring income active in that month.
                   </p>
                 </div>
               );
@@ -220,6 +228,142 @@ export function IncomeForecastChart({
             fill="var(--chart-2)"
             radius={[4, 4, 0, 0]}
             maxBarSize={26}
+          />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+export type TagFlowRow = {
+  tagId: string;
+  name: string;
+  color: string | null;
+  income: number;
+  expense: number;
+};
+
+export function TagIncomeExpenseChart({
+  data,
+  formatMoney,
+  monthLabel,
+}: {
+  data: TagFlowRow[];
+  formatMoney: (n: number) => string;
+  monthLabel: string;
+}) {
+  if (data.length === 0) {
+    return (
+      <p className="text-muted-foreground py-10 text-center text-sm">
+        Tag income and expenses when you add or edit entries. Only tags with
+        activity this month appear here.
+      </p>
+    );
+  }
+
+  const chartData = data.map((t) => ({
+    name:
+      t.name.length > 20 ? `${t.name.slice(0, 18).trim()}…` : t.name,
+    fullName: t.name,
+    income: t.income,
+    expense: t.expense,
+    tagColor: t.color,
+  }));
+
+  const chartHeight = Math.min(520, Math.max(200, chartData.length * 40 + 48));
+
+  return (
+    <div
+      className="w-full"
+      style={{ height: chartHeight }}
+      role="img"
+      aria-label={`Income and expenses by tag for ${monthLabel}`}
+    >
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart
+          layout="vertical"
+          data={chartData}
+          margin={{ top: 8, right: 12, left: 4, bottom: 8 }}
+          barCategoryGap="12%"
+        >
+          <CartesianGrid
+            strokeDasharray="3 3"
+            className="stroke-border/80"
+            horizontal={false}
+          />
+          <XAxis
+            type="number"
+            tickFormatter={tickShort}
+            tick={{ fontSize: 11 }}
+            tickLine={false}
+            axisLine={false}
+            className="text-muted-foreground"
+          />
+          <YAxis
+            type="category"
+            dataKey="name"
+            width={100}
+            tick={{ fontSize: 11 }}
+            tickLine={false}
+            axisLine={false}
+            className="text-muted-foreground"
+          />
+          <Tooltip
+            cursor={{ fill: "var(--muted)", opacity: 0.25 }}
+            content={({ active, payload }) => {
+              if (!active || !payload?.length) return null;
+              const row = payload[0]?.payload as {
+                fullName: string;
+                tagColor: string | null;
+              };
+              return (
+                <div className="bg-popover text-popover-foreground max-w-xs rounded-lg border px-3 py-2 text-xs shadow-md">
+                  <p className="mb-1.5 flex items-center gap-2 font-medium">
+                    {row.tagColor ? (
+                      <span
+                        className="size-2.5 shrink-0 rounded-full border"
+                        style={{ backgroundColor: row.tagColor }}
+                        aria-hidden
+                      />
+                    ) : null}
+                    <span>{row.fullName}</span>
+                  </p>
+                  <ul className="space-y-1">
+                    {payload.map((p) => (
+                      <li
+                        key={String(p.dataKey)}
+                        className="flex justify-between gap-6"
+                      >
+                        <span className="text-muted-foreground">{p.name}</span>
+                        <span className="font-medium tabular-nums">
+                          {formatMoney(Number(p.value))}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              );
+            }}
+          />
+          <Legend
+            wrapperStyle={{ fontSize: 12 }}
+            formatter={(value) => (
+              <span className="text-muted-foreground">{value}</span>
+            )}
+          />
+          <Bar
+            dataKey="income"
+            name="Income"
+            fill="var(--chart-2)"
+            radius={[0, 2, 2, 0]}
+            maxBarSize={18}
+          />
+          <Bar
+            dataKey="expense"
+            name="Expenses"
+            fill="var(--destructive)"
+            radius={[0, 2, 2, 0]}
+            maxBarSize={18}
           />
         </BarChart>
       </ResponsiveContainer>
@@ -244,7 +388,7 @@ export function IncomeSourceChart({
   if (total <= 0) {
     return (
       <p className="text-muted-foreground py-10 text-center text-sm">
-        No income this month.
+        No income payment records this month.
       </p>
     );
   }
@@ -324,12 +468,12 @@ export function IncomeReceivedCard({
   return (
     <Card className="border-border/80 shadow-none">
       <CardHeader className="pb-2">
-        <CardTitle className="text-base">Received vs pending</CardTitle>
-        <CardDescription>Received vs still expected.</CardDescription>
+        <CardTitle className="text-base">Received and pending</CardTitle>
+        <CardDescription>Deposited versus still expected.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         {totalIncome <= 0 ? (
-          <p className="text-muted-foreground text-sm">No income this month.</p>
+          <p className="text-muted-foreground text-sm">No income recorded this month.</p>
         ) : (
           <>
             <div className="bg-muted flex h-3 overflow-hidden rounded-full">
@@ -413,7 +557,7 @@ export function SalaryPayScheduleCard({
       <CardContent className="space-y-3">
         {total <= 0 ? (
           <p className="text-muted-foreground text-sm">
-            No company salary recorded this month.
+            No salary income recorded this month.
           </p>
         ) : (
           <>

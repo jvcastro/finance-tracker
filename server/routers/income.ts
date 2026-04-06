@@ -2,7 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { endOfMonth, startOfMonth } from "date-fns";
 import { z } from "zod";
 
-import type { PrismaClient } from "@/generated/prisma/client";
+import { Prisma, type PrismaClient } from "@/generated/prisma/client";
 import { atNoonLocal } from "@/lib/income-schedule";
 import {
   ensureIncomeRecordsForMonth,
@@ -24,6 +24,7 @@ const streamFields = z.object({
   endDate: z.coerce.date().nullable().optional(),
   description: z.string().max(500).optional().nullable(),
   tagId: z.string().optional().nullable(),
+  bankId: z.string().optional().nullable(),
   isActive: z.boolean().optional(),
 });
 
@@ -50,7 +51,7 @@ function streamRefine(
   if (data.sourceType !== "SALARY" && data.salaryPaySchedule != null) {
     ctx.addIssue({
       code: "custom",
-      message: "Pay schedule applies only to company salary.",
+      message: "Pay schedule applies only to salary.",
       path: ["salaryPaySchedule"],
     });
   }
@@ -61,7 +62,7 @@ function streamRefine(
   ) {
     ctx.addIssue({
       code: "custom",
-      message: "Bi-weekly pay needs a second day of the month (e.g. 30).",
+      message: "Biweekly pay needs a second day of the month (for example, 30).",
       path: ["secondPaymentDay"],
     });
   }
@@ -73,7 +74,7 @@ function streamRefine(
   ) {
     ctx.addIssue({
       code: "custom",
-      message: "Use two different days for each pay (e.g. 15 and 30).",
+      message: "Use two different days for each payment (for example, 15 and 30).",
       path: ["secondPaymentDay"],
     });
   }
@@ -94,6 +95,7 @@ const manualCreateInput = z
     description: z.string().max(500).optional().nullable(),
     received: z.boolean(),
     tagId: z.string().optional().nullable(),
+    bankId: z.string().optional().nullable(),
   })
   .superRefine((data, ctx) => {
     if (data.sourceType === "SALARY" && data.salaryPaySchedule == null) {
@@ -106,7 +108,7 @@ const manualCreateInput = z
     if (data.sourceType !== "SALARY" && data.salaryPaySchedule != null) {
       ctx.addIssue({
         code: "custom",
-        message: "Pay schedule applies only to company salary.",
+        message: "Pay schedule applies only to salary.",
         path: ["salaryPaySchedule"],
       });
     }
@@ -118,6 +120,7 @@ const recordUpdateInput = z.object({
   received: z.boolean().optional(),
   description: z.string().max(500).optional().nullable(),
   tagId: z.string().optional().nullable(),
+  bankId: z.string().optional().nullable(),
 });
 
 async function assertTag(
@@ -134,6 +137,66 @@ async function assertTag(
   }
 }
 
+async function assertBank(
+  prisma: PrismaClient,
+  userId: string,
+  bankId: string | null | undefined,
+) {
+  if (!bankId) return;
+  const bank = await prisma.bank.findFirst({
+    where: { id: bankId, userId },
+  });
+  if (!bank) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid bank." });
+  }
+}
+
+const incomeStreamWithRelationsSelect = {
+  id: true,
+  userId: true,
+  amount: true,
+  sourceType: true,
+  sourceName: true,
+  salaryPaySchedule: true,
+  paymentDay: true,
+  secondPaymentDay: true,
+  startDate: true,
+  endDate: true,
+  description: true,
+  tagId: true,
+  bankId: true,
+  isActive: true,
+  createdAt: true,
+  updatedAt: true,
+  tag: { select: { id: true, name: true } },
+  bank: { select: { id: true, name: true } },
+} satisfies Prisma.IncomeStreamSelect;
+
+const incomeRecordWithRelationsSelect = {
+  id: true,
+  userId: true,
+  incomeStreamId: true,
+  scheduledDate: true,
+  amount: true,
+  received: true,
+  description: true,
+  tagId: true,
+  bankId: true,
+  sourceType: true,
+  sourceName: true,
+  salaryPaySchedule: true,
+  createdAt: true,
+  tag: { select: { id: true, name: true } },
+  bank: { select: { id: true, name: true } },
+  incomeStream: {
+    select: {
+      sourceType: true,
+      sourceName: true,
+      salaryPaySchedule: true,
+    },
+  },
+} satisfies Prisma.IncomeSelect;
+
 export const incomeRouter = router({
   stream: router({
     list: protectedProcedure.query(async ({ ctx }) => {
@@ -141,7 +204,7 @@ export const incomeRouter = router({
       const rows = await ctx.prisma.incomeStream.findMany({
         where: { userId },
         orderBy: { startDate: "desc" },
-        include: { tag: true },
+        select: incomeStreamWithRelationsSelect,
       });
       return rows.map((r) => ({
         ...r,
@@ -153,6 +216,7 @@ export const incomeRouter = router({
       .mutation(async ({ ctx, input }) => {
         const userId = ctx.session!.user!.id;
         await assertTag(ctx.prisma, userId, input.tagId);
+        await assertBank(ctx.prisma, userId, input.bankId);
         const row = await ctx.prisma.incomeStream.create({
           data: {
             userId,
@@ -171,9 +235,10 @@ export const incomeRouter = router({
             endDate: input.endDate ?? null,
             description: input.description,
             tagId: input.tagId ?? undefined,
+            bankId: input.bankId ?? undefined,
             isActive: input.isActive ?? true,
           },
-          include: { tag: true },
+          select: incomeStreamWithRelationsSelect,
         });
         await ensureIncomeRecordsRollingWindow(ctx.prisma, userId);
         return { ...row, amount: Number(row.amount) };
@@ -189,6 +254,7 @@ export const incomeRouter = router({
           throw new TRPCError({ code: "NOT_FOUND" });
         }
         await assertTag(ctx.prisma, userId, input.tagId);
+        await assertBank(ctx.prisma, userId, input.bankId);
         const row = await ctx.prisma.incomeStream.update({
           where: { id: input.id },
           data: {
@@ -207,9 +273,10 @@ export const incomeRouter = router({
             endDate: input.endDate ?? null,
             description: input.description,
             tagId: input.tagId ?? undefined,
+            bankId: input.bankId ?? undefined,
             isActive: input.isActive ?? true,
           },
-          include: { tag: true },
+          select: incomeStreamWithRelationsSelect,
         });
         await ensureIncomeRecordsRollingWindow(ctx.prisma, userId);
         return { ...row, amount: Number(row.amount) };
@@ -251,7 +318,7 @@ export const incomeRouter = router({
             scheduledDate: { gte: monthStart, lte: monthEnd },
           },
           orderBy: [{ scheduledDate: "asc" }, { received: "asc" }],
-          include: { tag: true, incomeStream: true },
+          select: incomeRecordWithRelationsSelect,
         });
         return rows.map((r) => ({
           ...r,
@@ -271,6 +338,7 @@ export const incomeRouter = router({
       .mutation(async ({ ctx, input }) => {
         const userId = ctx.session!.user!.id;
         await assertTag(ctx.prisma, userId, input.tagId);
+        await assertBank(ctx.prisma, userId, input.bankId);
         const scheduledDate = atNoonLocal(input.scheduledDate);
         const existingManual = await ctx.prisma.income.findFirst({
           where: {
@@ -294,12 +362,13 @@ export const incomeRouter = router({
             received: input.received,
             description: input.description,
             tagId: input.tagId ?? undefined,
+            bankId: input.bankId ?? undefined,
             sourceType: input.sourceType,
             sourceName: input.sourceName?.trim() || null,
             salaryPaySchedule:
               input.sourceType === "SALARY" ? input.salaryPaySchedule : null,
           },
-          include: { tag: true, incomeStream: true },
+          select: incomeRecordWithRelationsSelect,
         });
         return { ...row, amount: Number(row.amount) };
       }),
@@ -315,6 +384,7 @@ export const incomeRouter = router({
           throw new TRPCError({ code: "NOT_FOUND" });
         }
         await assertTag(ctx.prisma, userId, input.tagId);
+        await assertBank(ctx.prisma, userId, input.bankId);
         const row = await ctx.prisma.income.update({
           where: { id: input.id },
           data: {
@@ -322,8 +392,9 @@ export const incomeRouter = router({
             ...(input.received != null ? { received: input.received } : {}),
             description: input.description,
             tagId: input.tagId ?? undefined,
+            ...(input.bankId !== undefined ? { bankId: input.bankId } : {}),
           },
-          include: { tag: true, incomeStream: true },
+          select: incomeRecordWithRelationsSelect,
         });
         return { ...row, amount: Number(row.amount) };
       }),

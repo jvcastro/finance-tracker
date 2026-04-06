@@ -58,8 +58,8 @@ export function LoginForm({ googleEnabled }: { googleEnabled: boolean }) {
   return (
     <Card className="w-full max-w-sm">
       <CardHeader>
-        <CardTitle className="text-base">Log in</CardTitle>
-        <CardDescription>Email or Google.</CardDescription>
+        <CardTitle className="text-base">Sign in</CardTitle>
+        <CardDescription>Use your email or Google.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {googleEnabled ? (
