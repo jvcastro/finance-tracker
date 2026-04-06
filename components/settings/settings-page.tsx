@@ -29,6 +29,12 @@ import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { isProtectedTagName } from "@/lib/default-tags";
 import { DEFAULT_CURRENCY, formatCurrency, getCurrencySymbol } from "@/lib/format";
+import {
+  FINANCIAL_ACCOUNT_KIND_LABEL,
+  FINANCIAL_ACCOUNT_KIND_VALUES,
+  financialAccountKindSchema,
+  type FinancialAccountKindValue,
+} from "@/lib/financial-account-kind";
 import { trpc } from "@/lib/trpc/react";
 
 const settingsSchema = z.object({
@@ -53,8 +59,9 @@ const tagSchema = z
     }
   });
 
-const bankSchema = z.object({
+const financialAccountSchema = z.object({
   name: z.string().min(1).max(120),
+  kind: financialAccountKindSchema,
   notes: z.string().max(500).optional(),
 });
 
@@ -122,11 +129,11 @@ export function SettingsPage() {
       <div>
         <h1 className="text-lg font-semibold tracking-tight">Settings</h1>
         <p className="text-muted-foreground text-sm">
-          Banks, tags, and display preferences.
+          Accounts, tags, and display preferences.
         </p>
       </div>
 
-      <BanksSection />
+      <AccountsSection />
 
       <Card>
         <CardHeader>
@@ -271,65 +278,71 @@ export function SettingsPage() {
   );
 }
 
-function BanksSection() {
+function AccountsSection() {
   const utils = trpc.useUtils();
-  const { data: banks = [] } = trpc.bank.list.useQuery();
-  const createBank = trpc.bank.create.useMutation({
+  const { data: accounts = [] } = trpc.financialAccount.list.useQuery();
+  const createAccount = trpc.financialAccount.create.useMutation({
     onSuccess: () => {
-      void utils.bank.list.invalidate();
-      toast.success("Bank added.");
+      void utils.financialAccount.list.invalidate();
+      toast.success("Account added.");
     },
     onError: (e) => toast.error(e.message),
   });
-  const updateBank = trpc.bank.update.useMutation({
+  const updateAccount = trpc.financialAccount.update.useMutation({
     onSuccess: () => {
-      void utils.bank.list.invalidate();
-      toast.success("Bank updated.");
+      void utils.financialAccount.list.invalidate();
+      toast.success("Account updated.");
     },
     onError: (e) => toast.error(e.message),
   });
-  const deleteBank = trpc.bank.delete.useMutation({
+  const deleteAccount = trpc.financialAccount.delete.useMutation({
     onSuccess: () => {
-      void utils.bank.list.invalidate();
-      toast.success("Bank deleted.");
+      void utils.financialAccount.list.invalidate();
+      toast.success("Account deleted.");
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const addForm = useForm<z.infer<typeof bankSchema>>({
-    resolver: zodResolver(bankSchema),
-    defaultValues: { name: "", notes: "" },
+  const addForm = useForm<z.infer<typeof financialAccountSchema>>({
+    resolver: zodResolver(financialAccountSchema),
+    defaultValues: { name: "", kind: "CHECKING", notes: "" },
   });
 
   const [editOpen, setEditOpen] = React.useState(false);
   const [editingId, setEditingId] = React.useState<string | null>(null);
 
-  const editForm = useForm<z.infer<typeof bankSchema>>({
-    resolver: zodResolver(bankSchema),
-    defaultValues: { name: "", notes: "" },
+  const editForm = useForm<z.infer<typeof financialAccountSchema>>({
+    resolver: zodResolver(financialAccountSchema),
+    defaultValues: { name: "", kind: "CHECKING", notes: "" },
   });
 
   React.useEffect(() => {
     if (!editOpen || !editingId) return;
-    const b = banks.find((x) => x.id === editingId);
-    if (b) {
-      editForm.reset({ name: b.name, notes: b.notes ?? "" });
+    const a = accounts.find((x) => x.id === editingId);
+    if (a) {
+      editForm.reset({
+        name: a.name,
+        kind: a.kind as FinancialAccountKindValue,
+        notes: a.notes ?? "",
+      });
     }
-  }, [editOpen, editingId, banks, editForm]);
+  }, [editOpen, editingId, accounts, editForm]);
 
-  function onAddSubmit(values: z.infer<typeof bankSchema>) {
-    createBank.mutate({
+  function onAddSubmit(values: z.infer<typeof financialAccountSchema>) {
+    createAccount.mutate({
       name: values.name,
+      kind: values.kind,
       notes: values.notes || undefined,
     });
-    addForm.reset({ name: "", notes: "" });
+    addForm.reset({ name: "", kind: "CHECKING", notes: "" });
   }
 
-  function onEditSubmit(values: z.infer<typeof bankSchema>) {
+  function onEditSubmit(values: z.infer<typeof financialAccountSchema>) {
     if (!editingId) return;
-    updateBank.mutate({
+    updateAccount.mutate({
       id: editingId,
       name: values.name,
+      kind: values.kind,
       notes: values.notes || null,
     });
     setEditOpen(false);
@@ -339,36 +352,57 @@ function BanksSection() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Banks</CardTitle>
+        <CardTitle className="text-base">Accounts</CardTitle>
         <CardDescription>
-          Accounts and institutions you use when categorizing transactions.
+          Savings, checking, credit cards, e-wallets (e.g. GCash, Maya), or cash. Link them on
+          income and expenses to see where money moves.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <form
-          className="grid gap-3 sm:grid-cols-[1fr_1fr_auto]"
+          className="grid gap-3 sm:grid-cols-[1fr_1fr_1fr_auto]"
           onSubmit={addForm.handleSubmit(onAddSubmit)}
         >
           <div className="grid gap-2 sm:col-span-1">
-            <Label htmlFor="bank-name">Bank name</Label>
+            <Label htmlFor="fa-name">Name</Label>
             <Input
-              id="bank-name"
-              placeholder="e.g. Chase, Ally Bank"
+              id="fa-name"
+              placeholder="e.g. BPI Savings, GCash, Maya"
               {...addForm.register("name")}
             />
           </div>
           <div className="grid gap-2 sm:col-span-1">
-            <Label htmlFor="bank-notes">Notes (optional)</Label>
+            <Label>Type</Label>
+            <Select
+              value={addForm.watch("kind")}
+              onValueChange={(v) =>
+                addForm.setValue("kind", v as FinancialAccountKindValue)
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {FINANCIAL_ACCOUNT_KIND_VALUES.map((k) => (
+                  <SelectItem key={k} value={k}>
+                    {FINANCIAL_ACCOUNT_KIND_LABEL[k]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid gap-2 sm:col-span-1">
+            <Label htmlFor="fa-notes">Notes (optional)</Label>
             <Input
-              id="bank-notes"
-              placeholder="Main checking, joint account…"
+              id="fa-notes"
+              placeholder="Joint, payroll in…"
               {...addForm.register("notes")}
             />
           </div>
           <div className="flex items-end sm:col-span-1">
-            <Button type="submit" disabled={createBank.isPending}>
+            <Button type="submit" disabled={createAccount.isPending}>
               <IconPlus className="size-4" />
-              Add bank
+              Add
             </Button>
           </div>
         </form>
@@ -376,18 +410,23 @@ function BanksSection() {
         <Separator />
 
         <ul className="space-y-2">
-          {banks.length === 0 ? (
-            <p className="text-muted-foreground text-sm">No banks yet.</p>
+          {accounts.length === 0 ? (
+            <p className="text-muted-foreground text-sm">No accounts yet.</p>
           ) : (
-            banks.map((b) => (
+            accounts.map((a) => (
               <li
-                key={b.id}
+                key={a.id}
                 className="flex flex-col gap-2 rounded-md border px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between"
               >
                 <div className="min-w-0">
-                  <p className="font-medium">{b.name}</p>
-                  {b.notes ? (
-                    <p className="text-muted-foreground truncate text-xs">{b.notes}</p>
+                  <p className="font-medium">
+                    {a.name}{" "}
+                    <span className="text-muted-foreground font-normal">
+                      ({FINANCIAL_ACCOUNT_KIND_LABEL[a.kind as FinancialAccountKindValue]})
+                    </span>
+                  </p>
+                  {a.notes ? (
+                    <p className="text-muted-foreground truncate text-xs">{a.notes}</p>
                   ) : null}
                 </div>
                 <div className="flex shrink-0 gap-1">
@@ -395,9 +434,9 @@ function BanksSection() {
                     type="button"
                     variant="ghost"
                     size="icon-xs"
-                    aria-label={`Edit ${b.name}`}
+                    aria-label={`Edit ${a.name}`}
                     onClick={() => {
-                      setEditingId(b.id);
+                      setEditingId(a.id);
                       setEditOpen(true);
                     }}
                   >
@@ -407,8 +446,8 @@ function BanksSection() {
                     type="button"
                     variant="ghost"
                     size="icon-xs"
-                    aria-label={`Delete ${b.name}`}
-                    onClick={() => deleteBank.mutate({ id: b.id })}
+                    aria-label={`Delete ${a.name}`}
+                    onClick={() => deleteAccount.mutate({ id: a.id })}
                   >
                     <IconTrash className="size-4 text-destructive" />
                   </Button>
@@ -427,19 +466,39 @@ function BanksSection() {
         >
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
-              <DialogTitle>Edit bank</DialogTitle>
+              <DialogTitle>Edit account</DialogTitle>
             </DialogHeader>
             <form className="grid gap-3" onSubmit={editForm.handleSubmit(onEditSubmit)}>
               <div className="grid gap-2">
-                <Label htmlFor="edit-bank-name">Name</Label>
-                <Input id="edit-bank-name" {...editForm.register("name")} />
+                <Label htmlFor="edit-fa-name">Name</Label>
+                <Input id="edit-fa-name" {...editForm.register("name")} />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="edit-bank-notes">Notes</Label>
-                <Textarea id="edit-bank-notes" rows={3} {...editForm.register("notes")} />
+                <Label>Type</Label>
+                <Select
+                  value={editForm.watch("kind")}
+                  onValueChange={(v) =>
+                    editForm.setValue("kind", v as FinancialAccountKindValue)
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {FINANCIAL_ACCOUNT_KIND_VALUES.map((k) => (
+                      <SelectItem key={k} value={k}>
+                        {FINANCIAL_ACCOUNT_KIND_LABEL[k]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="edit-fa-notes">Notes</Label>
+                <Textarea id="edit-fa-notes" rows={3} {...editForm.register("notes")} />
               </div>
               <DialogFooter>
-                <Button type="submit" disabled={updateBank.isPending}>
+                <Button type="submit" disabled={updateAccount.isPending}>
                   Save
                 </Button>
               </DialogFooter>

@@ -21,7 +21,10 @@ import { parseAsString, parseAsStringLiteral, useQueryState } from "nuqs";
 import { toast } from "sonner";
 import { z } from "zod";
 
-import { DataTable } from "@/components/data-table";
+import {
+  DataTable,
+  filterRowsByGlobalFilter,
+} from "@/components/data-table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -47,10 +50,28 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useCurrencyFormatter } from "@/hooks/use-currency-formatter";
 import { formatDate, formatIncomePeriod } from "@/lib/format";
+import {
+  FINANCIAL_ACCOUNT_KIND_LABEL,
+  type FinancialAccountKindValue,
+} from "@/lib/financial-account-kind";
 import { trpc } from "@/lib/trpc/react";
+
+type FinancialAccountRef = {
+  id: string;
+  name: string;
+  kind: FinancialAccountKindValue;
+};
 
 const PAYMENT_METHOD_LABEL = {
   MANUAL: "Manual / other",
@@ -63,7 +84,7 @@ const expenseSchema = z.object({
   date: z.string().min(1),
   description: z.string().optional(),
   tagId: z.string().optional(),
-  bankId: z.string().optional(),
+  financialAccountId: z.string().optional(),
   paymentMethod: z.enum(["MANUAL", "BANK_AUTO_DEBIT", "CARD_AUTO_PAY"]),
   paid: z.boolean(),
 });
@@ -77,8 +98,8 @@ type ExpenseRow = {
   description: string | null;
   tagId: string | null;
   tag: { id: string; name: string } | null;
-  bankId: string | null;
-  bank: { id: string; name: string } | null;
+  financialAccountId: string | null;
+  financialAccount: FinancialAccountRef | null;
   paymentMethod: keyof typeof PAYMENT_METHOD_LABEL;
   expenseStreamId: string | null;
   expenseStream: { id: string } | null;
@@ -90,7 +111,7 @@ const expenseStreamSchema = z
     amount: z.coerce.number().positive(),
     description: z.string().optional(),
     tagId: z.string().optional(),
-    bankId: z.string().optional(),
+    financialAccountId: z.string().optional(),
     paymentMethod: z.enum(["MANUAL", "BANK_AUTO_DEBIT", "CARD_AUTO_PAY"]),
     paymentDay: z.coerce.number().int().min(1).max(31),
     startDate: z.string().min(1),
@@ -119,8 +140,8 @@ type ExpenseStreamRow = {
   description: string | null;
   tagId: string | null;
   tag: { id: string; name: string } | null;
-  bankId: string | null;
-  bank: { id: string; name: string } | null;
+  financialAccountId: string | null;
+  financialAccount: FinancialAccountRef | null;
   paymentMethod: keyof typeof PAYMENT_METHOD_LABEL;
   paymentDay: number;
   startDate: Date;
@@ -149,7 +170,7 @@ function ExpensesTab({ tableFilter, onTableFilterChange }: TableFilterProps) {
     month: monthDate,
   });
   const { data: tags = [] } = trpc.tag.list.useQuery();
-  const { data: banks = [] } = trpc.bank.list.useQuery();
+  const { data: accounts = [] } = trpc.financialAccount.list.useQuery();
 
   const createMut = trpc.expense.create.useMutation({
     onSuccess: () => {
@@ -193,8 +214,14 @@ function ExpensesTab({ tableFilter, onTableFilterChange }: TableFilterProps) {
     onError: (e) => toast.error(e.message),
   });
 
+  const filteredExpenseRows = React.useMemo(
+    () => filterRowsByGlobalFilter(rows as ExpenseRow[], tableFilter),
+    [rows, tableFilter],
+  );
+
   const [open, setOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<ExpenseRow | null>(null);
+  const [detailRow, setDetailRow] = React.useState<ExpenseRow | null>(null);
 
   const form = useForm<ExpenseForm>({
     resolver: zodResolver(expenseSchema),
@@ -203,7 +230,7 @@ function ExpensesTab({ tableFilter, onTableFilterChange }: TableFilterProps) {
       date: new Date().toISOString().slice(0, 10),
       description: "",
       tagId: "",
-      bankId: "",
+      financialAccountId: "",
       paymentMethod: "MANUAL",
       paid: false,
     },
@@ -216,7 +243,7 @@ function ExpensesTab({ tableFilter, onTableFilterChange }: TableFilterProps) {
         date: new Date(editing.date).toISOString().slice(0, 10),
         description: editing.description ?? "",
         tagId: editing.tagId ?? "",
-        bankId: editing.bankId ?? "",
+        financialAccountId: editing.financialAccountId ?? "",
         paymentMethod: editing.paymentMethod,
         paid: editing.paid,
       });
@@ -226,7 +253,7 @@ function ExpensesTab({ tableFilter, onTableFilterChange }: TableFilterProps) {
         date: new Date().toISOString().slice(0, 10),
         description: "",
         tagId: "",
-        bankId: "",
+        financialAccountId: "",
         paymentMethod: "MANUAL",
         paid: false,
       });
@@ -239,7 +266,7 @@ function ExpensesTab({ tableFilter, onTableFilterChange }: TableFilterProps) {
       date: new Date(values.date),
       description: values.description || undefined,
       tagId: values.tagId || null,
-      bankId: values.bankId || null,
+      financialAccountId: values.financialAccountId || null,
       paymentMethod: values.paymentMethod,
       paid: values.paid,
     };
@@ -286,14 +313,25 @@ function ExpensesTab({ tableFilter, onTableFilterChange }: TableFilterProps) {
       cell: ({ row }) => row.original.tag?.name ?? "—",
     },
     {
-      id: "bank",
-      header: "Bank",
-      meta: { className: "hidden lg:table-cell" },
-      cell: ({ row }) => row.original.bank?.name ?? "—",
+      id: "financialAccount",
+      header: "Account",
+      meta: { className: "hidden md:table-cell min-w-[10rem]" },
+      cell: ({ row }) => {
+        const fa = row.original.financialAccount;
+        if (!fa) return "—";
+        return (
+          <span className="text-sm">
+            <span>{fa.name}</span>
+            <span className="text-muted-foreground ml-1 text-xs">
+              ({FINANCIAL_ACCOUNT_KIND_LABEL[fa.kind]})
+            </span>
+          </span>
+        );
+      },
     },
     {
       id: "paymentMethod",
-      header: "Payment",
+      header: "How it pays",
       meta: { className: "hidden xl:table-cell w-[9rem]" },
       cell: ({ row }) => PAYMENT_METHOD_LABEL[row.original.paymentMethod],
     },
@@ -333,7 +371,12 @@ function ExpensesTab({ tableFilter, onTableFilterChange }: TableFilterProps) {
       cell: ({ row }) => (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon-xs" aria-label="Actions">
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className="px-2"
+              aria-label="Actions"
+            >
               <IconDotsVertical className="size-4" />
             </Button>
           </DropdownMenuTrigger>
@@ -443,13 +486,128 @@ function ExpensesTab({ tableFilter, onTableFilterChange }: TableFilterProps) {
       {isLoading ? (
         <p className="text-muted-foreground text-sm">Loading…</p>
       ) : (
-        <DataTable
-          columns={columns}
-          data={rows as ExpenseRow[]}
-          mobileScrollHint="Swipe sideways to see all columns."
-          globalFilter={tableFilter}
-          onGlobalFilterChange={onTableFilterChange}
-        />
+        <>
+          <Input
+            type="search"
+            placeholder="Search…"
+            value={tableFilter}
+            onChange={(e) => onTableFilterChange(e.target.value)}
+            className="max-w-sm"
+            aria-label="Search expenses"
+          />
+          <div className="hidden sm:block">
+            <DataTable
+              columns={columns}
+              data={rows as ExpenseRow[]}
+              mobileScrollHint="Swipe sideways to see all columns."
+              globalFilter={tableFilter}
+              onGlobalFilterChange={onTableFilterChange}
+              hideFilterInput
+            />
+          </div>
+          <div className="sm:hidden space-y-2">
+            {filteredExpenseRows.length === 0 ? (
+              <div className="text-muted-foreground rounded-lg border border-border/80 bg-card px-4 py-8 text-center text-sm shadow-sm">
+                {Boolean(tableFilter.trim()) && rows.length > 0
+                  ? "No rows match your filter."
+                  : "No rows yet."}
+              </div>
+            ) : (
+              filteredExpenseRows.map((row) => (
+                <div
+                  key={row.id}
+                  className="flex items-stretch gap-1 rounded-lg border border-border/80 bg-card shadow-sm"
+                >
+                  <button
+                    type="button"
+                    className="hover:bg-muted/50 active:bg-muted/70 min-w-0 flex-1 px-3 py-3 text-left text-sm transition-colors"
+                    onClick={() => setDetailRow(row)}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-foreground line-clamp-2 font-medium leading-snug">
+                          {row.description?.trim() || "No description"}
+                        </p>
+                        <p className="text-muted-foreground mt-1 flex flex-wrap items-center gap-2 text-xs">
+                          {row.paid ? (
+                            <Badge variant="secondary" className="font-normal">
+                              Paid
+                            </Badge>
+                          ) : (
+                            <Badge
+                              variant="outline"
+                              className="font-normal text-amber-800 dark:text-amber-400"
+                            >
+                              Pending
+                            </Badge>
+                          )}
+                          <span>
+                            {formatDate(row.date)}
+                            {row.financialAccount
+                              ? ` · ${row.financialAccount.name} (${FINANCIAL_ACCOUNT_KIND_LABEL[row.financialAccount.kind]})`
+                              : ""}
+                          </span>
+                        </p>
+                      </div>
+                      <span className="text-destructive shrink-0 font-semibold tabular-nums">
+                        {fmt(row.amount)}
+                      </span>
+                    </div>
+                  </button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        className="shrink-0 self-center px-2"
+                        aria-label="Actions"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <IconDotsVertical className="size-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem
+                        disabled={setPaidMut.isPending}
+                        onClick={() => {
+                          setPaidMut.mutate({ id: row.id, paid: !row.paid });
+                        }}
+                      >
+                        {row.paid ? (
+                          <>
+                            <IconCircle className="size-4" />
+                            Mark as pending
+                          </>
+                        ) : (
+                          <>
+                            <IconCircleCheck className="size-4" />
+                            Mark as paid
+                          </>
+                        )}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => {
+                          setEditing(row);
+                          setOpen(true);
+                        }}
+                      >
+                        <IconPencil className="size-4" />
+                        Edit
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        variant="destructive"
+                        onClick={() => deleteMut.mutate({ id: row.id })}
+                      >
+                        <IconTrash className="size-4" />
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              ))
+            )}
+          </div>
+        </>
       )}
 
       <Dialog
@@ -498,11 +656,11 @@ function ExpensesTab({ tableFilter, onTableFilterChange }: TableFilterProps) {
               </Select>
             </div>
             <div className="grid gap-2">
-              <Label>Bank (optional)</Label>
+              <Label>Account (optional)</Label>
               <Select
-                value={form.watch("bankId") || "__none__"}
+                value={form.watch("financialAccountId") || "__none__"}
                 onValueChange={(v) =>
-                  form.setValue("bankId", v === "__none__" ? "" : v)
+                  form.setValue("financialAccountId", v === "__none__" ? "" : v)
                 }
               >
                 <SelectTrigger>
@@ -510,15 +668,15 @@ function ExpensesTab({ tableFilter, onTableFilterChange }: TableFilterProps) {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__none__">None</SelectItem>
-                  {banks.map((b) => (
-                    <SelectItem key={b.id} value={b.id}>
-                      {b.name}
+                  {accounts.map((a) => (
+                    <SelectItem key={a.id} value={a.id}>
+                      {a.name} ({FINANCIAL_ACCOUNT_KIND_LABEL[a.kind]})
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
               <p className="text-muted-foreground text-xs">
-                Add or manage banks in{" "}
+                Savings, checking, cards, e-wallets (e.g. GCash, Maya). Add accounts in{" "}
                 <Link href="/settings" className="underline underline-offset-2">
                   Settings
                 </Link>
@@ -568,6 +726,119 @@ function ExpensesTab({ tableFilter, onTableFilterChange }: TableFilterProps) {
           </form>
         </DialogContent>
       </Dialog>
+
+      <Sheet
+        open={detailRow != null}
+        onOpenChange={(v) => {
+          if (!v) setDetailRow(null);
+        }}
+      >
+        <SheetContent
+          side="bottom"
+          className="max-h-[90vh] overflow-y-auto rounded-t-2xl px-0 sm:max-w-lg"
+        >
+          {detailRow ? (
+            <>
+              <SheetHeader className="px-6 pb-2 text-left">
+                <SheetTitle className="text-base leading-snug">
+                  {detailRow.description?.trim() || "Expense"}
+                </SheetTitle>
+                <SheetDescription className="sr-only">
+                  View expense details. Use Edit to change this expense.
+                </SheetDescription>
+              </SheetHeader>
+              <div className="text-foreground space-y-0 px-6 text-sm">
+                <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
+                  <span className="text-muted-foreground">Amount</span>
+                  <span className="text-destructive font-semibold tabular-nums">
+                    {fmt(detailRow.amount)}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
+                  <span className="text-muted-foreground">Date</span>
+                  <span>{formatDate(detailRow.date)}</span>
+                </div>
+                <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
+                  <span className="text-muted-foreground">Kind</span>
+                  <span>
+                    {detailRow.expenseStreamId ? "Recurring" : "One-off"}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
+                  <span className="text-muted-foreground">Tag</span>
+                  <span className="text-right">{detailRow.tag?.name ?? "—"}</span>
+                </div>
+                <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
+                  <span className="text-muted-foreground">Account</span>
+                  <span className="text-right">
+                    {detailRow.financialAccount
+                      ? `${detailRow.financialAccount.name} (${FINANCIAL_ACCOUNT_KIND_LABEL[detailRow.financialAccount.kind]})`
+                      : "—"}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
+                  <span className="text-muted-foreground">How it pays</span>
+                  <span className="text-right">
+                    {PAYMENT_METHOD_LABEL[detailRow.paymentMethod]}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-4 py-2.5">
+                  <span className="text-muted-foreground">Status</span>
+                  <span>{detailRow.paid ? "Paid" : "Pending"}</span>
+                </div>
+              </div>
+              <SheetFooter className="mt-auto grid grid-cols-2 gap-2 border-t border-border/80 p-6 pt-4">
+                <Button
+                  type="button"
+                  variant="default"
+                  className="min-w-0"
+                  disabled={setPaidMut.isPending}
+                  onClick={() => {
+                    const r = detailRow;
+                    if (!r) return;
+                    setPaidMut.mutate(
+                      { id: r.id, paid: !r.paid },
+                      {
+                        onSuccess: () => {
+                          setDetailRow((d) =>
+                            d && d.id === r.id ? { ...d, paid: !d.paid } : d,
+                          );
+                        },
+                      },
+                    );
+                  }}
+                >
+                  {detailRow.paid ? (
+                    <>
+                      <IconCircle className="size-4" />
+                      Mark as pending
+                    </>
+                  ) : (
+                    <>
+                      <IconCircleCheck className="size-4" />
+                      Mark as paid
+                    </>
+                  )}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="min-w-0"
+                  onClick={() => {
+                    const r = detailRow;
+                    setDetailRow(null);
+                    setEditing(r);
+                    setOpen(true);
+                  }}
+                >
+                  <IconPencil className="size-4" />
+                  Edit
+                </Button>
+              </SheetFooter>
+            </>
+          ) : null}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
@@ -577,7 +848,7 @@ function RecurringExpensesTab({ tableFilter, onTableFilterChange }: TableFilterP
   const utils = trpc.useUtils();
   const { data: rows = [], isLoading } = trpc.expense.stream.list.useQuery();
   const { data: tags = [] } = trpc.tag.list.useQuery();
-  const { data: banks = [] } = trpc.bank.list.useQuery();
+  const { data: accounts = [] } = trpc.financialAccount.list.useQuery();
 
   const createMut = trpc.expense.stream.create.useMutation({
     onSuccess: () => {
@@ -607,8 +878,16 @@ function RecurringExpensesTab({ tableFilter, onTableFilterChange }: TableFilterP
     onError: (e) => toast.error(e.message),
   });
 
+  const filteredStreamRows = React.useMemo(
+    () => filterRowsByGlobalFilter(rows as ExpenseStreamRow[], tableFilter),
+    [rows, tableFilter],
+  );
+
   const [open, setOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<ExpenseStreamRow | null>(null);
+  const [detailStream, setDetailStream] = React.useState<ExpenseStreamRow | null>(
+    null,
+  );
 
   const form = useForm<ExpenseStreamForm>({
     resolver: zodResolver(expenseStreamSchema),
@@ -616,7 +895,7 @@ function RecurringExpensesTab({ tableFilter, onTableFilterChange }: TableFilterP
       amount: 0,
       description: "",
       tagId: "",
-      bankId: "",
+      financialAccountId: "",
       paymentMethod: "MANUAL",
       paymentDay: 1,
       startDate: new Date().toISOString().slice(0, 10),
@@ -631,7 +910,7 @@ function RecurringExpensesTab({ tableFilter, onTableFilterChange }: TableFilterP
         amount: editing.amount,
         description: editing.description ?? "",
         tagId: editing.tagId ?? "",
-        bankId: editing.bankId ?? "",
+        financialAccountId: editing.financialAccountId ?? "",
         paymentMethod: editing.paymentMethod,
         paymentDay: editing.paymentDay,
         startDate: new Date(editing.startDate).toISOString().slice(0, 10),
@@ -645,7 +924,7 @@ function RecurringExpensesTab({ tableFilter, onTableFilterChange }: TableFilterP
         amount: 0,
         description: "",
         tagId: "",
-        bankId: "",
+        financialAccountId: "",
         paymentMethod: "MANUAL",
         paymentDay: 1,
         startDate: new Date().toISOString().slice(0, 10),
@@ -660,7 +939,7 @@ function RecurringExpensesTab({ tableFilter, onTableFilterChange }: TableFilterP
       amount: values.amount,
       description: values.description || undefined,
       tagId: values.tagId || null,
-      bankId: values.bankId || null,
+      financialAccountId: values.financialAccountId || null,
       paymentMethod: values.paymentMethod,
       paymentDay: values.paymentDay,
       startDate: new Date(values.startDate),
@@ -702,14 +981,25 @@ function RecurringExpensesTab({ tableFilter, onTableFilterChange }: TableFilterP
       cell: ({ row }) => row.original.tag?.name ?? "—",
     },
     {
-      id: "bank",
-      header: "Bank",
-      meta: { className: "hidden lg:table-cell" },
-      cell: ({ row }) => row.original.bank?.name ?? "—",
+      id: "financialAccount",
+      header: "Account",
+      meta: { className: "hidden md:table-cell min-w-[10rem]" },
+      cell: ({ row }) => {
+        const fa = row.original.financialAccount;
+        if (!fa) return "—";
+        return (
+          <span className="text-sm">
+            <span>{fa.name}</span>
+            <span className="text-muted-foreground ml-1 text-xs">
+              ({FINANCIAL_ACCOUNT_KIND_LABEL[fa.kind]})
+            </span>
+          </span>
+        );
+      },
     },
     {
       id: "paymentMethod",
-      header: "Payment",
+      header: "How it pays",
       meta: { className: "hidden xl:table-cell w-[9rem]" },
       cell: ({ row }) => PAYMENT_METHOD_LABEL[row.original.paymentMethod],
     },
@@ -746,7 +1036,12 @@ function RecurringExpensesTab({ tableFilter, onTableFilterChange }: TableFilterP
       cell: ({ row }) => (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon-xs" aria-label="Actions">
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className="px-2"
+              aria-label="Actions"
+            >
               <IconDotsVertical className="size-4" />
             </Button>
           </DropdownMenuTrigger>
@@ -796,13 +1091,98 @@ function RecurringExpensesTab({ tableFilter, onTableFilterChange }: TableFilterP
       {isLoading ? (
         <p className="text-muted-foreground text-sm">Loading…</p>
       ) : (
-        <DataTable
-          columns={columns}
-          data={rows as ExpenseStreamRow[]}
-          mobileScrollHint="Swipe sideways to see all columns."
-          globalFilter={tableFilter}
-          onGlobalFilterChange={onTableFilterChange}
-        />
+        <>
+          <Input
+            type="search"
+            placeholder="Search…"
+            value={tableFilter}
+            onChange={(e) => onTableFilterChange(e.target.value)}
+            className="max-w-sm"
+            aria-label="Search recurring expenses"
+          />
+          <div className="hidden sm:block">
+            <DataTable
+              columns={columns}
+              data={rows as ExpenseStreamRow[]}
+              mobileScrollHint="Swipe sideways to see all columns."
+              globalFilter={tableFilter}
+              onGlobalFilterChange={onTableFilterChange}
+              hideFilterInput
+            />
+          </div>
+          <div className="sm:hidden space-y-2">
+            {filteredStreamRows.length === 0 ? (
+              <div className="text-muted-foreground rounded-lg border border-border/80 bg-card px-4 py-8 text-center text-sm shadow-sm">
+                {Boolean(tableFilter.trim()) && rows.length > 0
+                  ? "No rows match your filter."
+                  : "No rows yet."}
+              </div>
+            ) : (
+              filteredStreamRows.map((row) => (
+                <div
+                  key={row.id}
+                  className="flex items-stretch gap-1 rounded-lg border border-border/80 bg-card shadow-sm"
+                >
+                  <button
+                    type="button"
+                    className="hover:bg-muted/50 active:bg-muted/70 min-w-0 flex-1 px-3 py-3 text-left text-sm transition-colors"
+                    onClick={() => setDetailStream(row)}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-foreground line-clamp-2 font-medium leading-snug">
+                          {row.description?.trim() || "Recurring expense"}
+                        </p>
+                        <p className="text-muted-foreground mt-1 text-xs">
+                          Day {row.paymentDay}
+                          {" · "}
+                          {formatIncomePeriod(row.startDate, row.endDate)}
+                          {row.financialAccount
+                            ? ` · ${row.financialAccount.name} (${FINANCIAL_ACCOUNT_KIND_LABEL[row.financialAccount.kind]})`
+                            : ""}
+                        </p>
+                      </div>
+                      <span className="text-destructive shrink-0 font-semibold tabular-nums">
+                        {fmt(row.amount)}
+                      </span>
+                    </div>
+                  </button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        className="shrink-0 self-center px-2"
+                        aria-label="Actions"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <IconDotsVertical className="size-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem
+                        onClick={() => {
+                          setEditing(row);
+                          setOpen(true);
+                        }}
+                      >
+                        <IconPencil className="size-4" />
+                        Edit
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        variant="destructive"
+                        onClick={() => deleteMut.mutate({ id: row.id })}
+                      >
+                        <IconTrash className="size-4" />
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              ))
+            )}
+          </div>
+        </>
       )}
 
       <Dialog
@@ -875,11 +1255,11 @@ function RecurringExpensesTab({ tableFilter, onTableFilterChange }: TableFilterP
               </Select>
             </div>
             <div className="grid gap-2">
-              <Label>Bank (optional)</Label>
+              <Label>Account (optional)</Label>
               <Select
-                value={form.watch("bankId") || "__none__"}
+                value={form.watch("financialAccountId") || "__none__"}
                 onValueChange={(v) =>
-                  form.setValue("bankId", v === "__none__" ? "" : v)
+                  form.setValue("financialAccountId", v === "__none__" ? "" : v)
                 }
               >
                 <SelectTrigger>
@@ -887,15 +1267,15 @@ function RecurringExpensesTab({ tableFilter, onTableFilterChange }: TableFilterP
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__none__">None</SelectItem>
-                  {banks.map((b) => (
-                    <SelectItem key={b.id} value={b.id}>
-                      {b.name}
+                  {accounts.map((a) => (
+                    <SelectItem key={a.id} value={a.id}>
+                      {a.name} ({FINANCIAL_ACCOUNT_KIND_LABEL[a.kind]})
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
               <p className="text-muted-foreground text-xs">
-                Add or manage banks in{" "}
+                Add or manage accounts in{" "}
                 <Link href="/settings" className="underline underline-offset-2">
                   Settings
                 </Link>
@@ -945,6 +1325,85 @@ function RecurringExpensesTab({ tableFilter, onTableFilterChange }: TableFilterP
           </form>
         </DialogContent>
       </Dialog>
+
+      <Sheet
+        open={detailStream != null}
+        onOpenChange={(v) => {
+          if (!v) setDetailStream(null);
+        }}
+      >
+        <SheetContent
+          side="bottom"
+          className="max-h-[90vh] overflow-y-auto rounded-t-2xl px-0 sm:max-w-lg"
+        >
+          {detailStream ? (
+            <>
+              <SheetHeader className="px-6 pb-2 text-left">
+                <SheetTitle className="text-base leading-snug">
+                  {detailStream.description?.trim() || "Recurring expense"}
+                </SheetTitle>
+                <SheetDescription className="sr-only">
+                  View recurring expense details. Use Edit to change this template.
+                </SheetDescription>
+              </SheetHeader>
+              <div className="text-foreground space-y-0 px-6 text-sm">
+                <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
+                  <span className="text-muted-foreground">Amount / month</span>
+                  <span className="text-destructive font-semibold tabular-nums">
+                    {fmt(detailStream.amount)}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
+                  <span className="text-muted-foreground">Day of month</span>
+                  <span>{detailStream.paymentDay}</span>
+                </div>
+                <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
+                  <span className="text-muted-foreground">Active period</span>
+                  <span className="text-right">
+                    {formatIncomePeriod(detailStream.startDate, detailStream.endDate)}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
+                  <span className="text-muted-foreground">Tag</span>
+                  <span className="text-right">{detailStream.tag?.name ?? "—"}</span>
+                </div>
+                <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
+                  <span className="text-muted-foreground">Account</span>
+                  <span className="text-right">
+                    {detailStream.financialAccount
+                      ? `${detailStream.financialAccount.name} (${FINANCIAL_ACCOUNT_KIND_LABEL[detailStream.financialAccount.kind]})`
+                      : "—"}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
+                  <span className="text-muted-foreground">How it pays</span>
+                  <span className="text-right">
+                    {PAYMENT_METHOD_LABEL[detailStream.paymentMethod]}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-4 py-2.5">
+                  <span className="text-muted-foreground">Active</span>
+                  <span>{detailStream.isActive ? "Yes" : "Off"}</span>
+                </div>
+              </div>
+              <SheetFooter className="border-t border-border/80 sm:flex-col">
+                <Button
+                  className="w-full"
+                  onClick={() => {
+                    const r = detailStream;
+                    setDetailStream(null);
+                    setEditing(r);
+                    setOpen(true);
+                  }}
+                >
+                  <IconPencil className="size-4" />
+                  Edit
+                </Button>
+              </SheetFooter>
+            </>
+          ) : null}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

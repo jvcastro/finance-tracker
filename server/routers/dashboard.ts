@@ -12,11 +12,30 @@ import {
 } from "date-fns";
 
 import { Prisma } from "@/generated/prisma/client";
+import {
+  mergeDashboardWidgetPatch,
+  parseDashboardWidgets,
+} from "@/lib/dashboard-widgets";
 import { CREDIT_CARD_TAG_NAME } from "@/lib/default-tags";
 import { ensureExpenseRecordsRollingWindow } from "@/lib/expense-ensure";
 import { ensureIncomeRecordsRollingWindow } from "@/lib/income-ensure";
 import { sumExpectedIncomeFromStreamsInMonth } from "@/lib/income-schedule";
+import { z } from "zod";
+
 import { router, protectedProcedure } from "@/server/trpc";
+
+const dashboardWidgetsPatchSchema = z
+  .object({
+    overview: z.boolean().optional(),
+    needThisMonth: z.boolean().optional(),
+    reminders: z.boolean().optional(),
+    tagByTag: z.boolean().optional(),
+    incomeOutlook: z.boolean().optional(),
+    cashFlow: z.boolean().optional(),
+    insights: z.boolean().optional(),
+    recentLists: z.boolean().optional(),
+  })
+  .strict();
 
 /** Aggregates + trends: only fields used by resolveSourceType / reminder titles. */
 const incomeRecordsForTotalsSelect = {
@@ -44,6 +63,7 @@ const expenseWithTagSelect = {
   id: true,
   date: true,
   amount: true,
+  paid: true,
   tagId: true,
   tag: { select: { id: true, name: true, color: true } },
 } satisfies Prisma.ExpenseSelect;
@@ -59,7 +79,7 @@ const dashboardRecentIncomeSelect = {
   sourceName: true,
   salaryPaySchedule: true,
   tag: { select: { name: true } },
-  bank: { select: { name: true } },
+  financialAccount: { select: { name: true, kind: true } },
   incomeStream: {
     select: {
       sourceType: true,
@@ -76,7 +96,7 @@ const dashboardRecentExpenseSelect = {
   description: true,
   expenseStreamId: true,
   tag: { select: { name: true } },
-  bank: { select: { name: true } },
+  financialAccount: { select: { name: true, kind: true } },
 } satisfies Prisma.ExpenseSelect;
 
 const incomeReminderRowSelect = {
@@ -174,17 +194,19 @@ export const dashboardRouter = router({
     const monthStart = startOfMonth(now);
     const monthEnd = endOfMonth(now);
 
-    const [incomeRecords, incomeStreams, expenses] = await Promise.all([
-      ctx.prisma.income.findMany({
-        where: { userId },
-        select: incomeRecordsForTotalsSelect,
-      }),
-      ctx.prisma.incomeStream.findMany({ where: { userId, isActive: true } }),
-      ctx.prisma.expense.findMany({
-        where: { userId },
-        select: expenseWithTagSelect,
-      }),
-    ]);
+    const [incomeRecords, incomeStreams, expenses, appSettingsRow] =
+      await Promise.all([
+        ctx.prisma.income.findMany({
+          where: { userId },
+          select: incomeRecordsForTotalsSelect,
+        }),
+        ctx.prisma.incomeStream.findMany({ where: { userId, isActive: true } }),
+        ctx.prisma.expense.findMany({
+          where: { userId },
+          select: expenseWithTagSelect,
+        }),
+        ctx.prisma.appSettings.findUnique({ where: { userId } }),
+      ]);
 
     const recordsThisMonth = incomeRecords.filter((r) =>
       isWithinInterval(r.scheduledDate, { start: monthStart, end: monthEnd }),
@@ -205,6 +227,13 @@ export const dashboardRouter = router({
       (s, e) => s + Number(e.amount),
       0,
     );
+    let stillToPayExpenses = 0;
+    let alreadyPaidExpenses = 0;
+    for (const e of expenseThisMonthRows) {
+      const a = Number(e.amount);
+      if (e.paid) alreadyPaidExpenses += a;
+      else stillToPayExpenses += a;
+    }
     const debtPaymentsThisMonth = sumCreditCardTaggedExpensesInRange(
       expenses,
       { start: monthStart, end: monthEnd },
@@ -244,6 +273,10 @@ export const dashboardRouter = router({
         }
       }
     }
+
+    /** Unpaid expenses still to settle minus income not yet received (liquidity gap). */
+    const residualCashGap =
+      stillToPayExpenses - incomeByReceivedThisMonth.pending;
 
     const UNTAGGED_KEY = "__untagged__";
 
@@ -447,7 +480,19 @@ export const dashboardRouter = router({
       daysUntil: differenceInCalendarDays(startOfDay(r.date), todayStart),
     }));
 
+    const dashboardWidgets = parseDashboardWidgets(appSettingsRow?.dashboardWidgets);
+
     return {
+      dashboardWidgets,
+      needThisMonth: {
+        plannedOutflows: expenseThisMonth,
+        stillToPay: stillToPayExpenses,
+        alreadyPaid: alreadyPaidExpenses,
+        expectedIncome: incomeThisMonth,
+        pendingIncome: incomeByReceivedThisMonth.pending,
+        receivedIncome: incomeByReceivedThisMonth.received,
+        residualCashGap,
+      },
       totals: {
         totalIncome,
         totalExpense,
@@ -484,4 +529,28 @@ export const dashboardRouter = router({
       },
     };
   }),
+
+  updateWidgets: protectedProcedure
+    .input(dashboardWidgetsPatchSchema)
+    .mutation(async ({ ctx, input }) => {
+      const userId = ctx.session!.user!.id;
+      const existing = await ctx.prisma.appSettings.findUnique({
+        where: { userId },
+      });
+      const merged = mergeDashboardWidgetPatch(
+        existing?.dashboardWidgets,
+        input,
+      );
+      await ctx.prisma.appSettings.upsert({
+        where: { userId },
+        create: {
+          userId,
+          currency: existing?.currency ?? "PHP",
+          weekStartsOn: existing?.weekStartsOn ?? 0,
+          dashboardWidgets: merged as object,
+        },
+        update: { dashboardWidgets: merged as object },
+      });
+      return merged;
+    }),
 });

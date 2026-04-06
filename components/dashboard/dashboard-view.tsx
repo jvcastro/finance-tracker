@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import Link from "next/link";
 import {
   IconArrowDownRight,
@@ -8,6 +9,7 @@ import {
   IconCreditCard,
   IconPigMoney,
   IconScale,
+  IconSettings,
   IconSparkles,
   IconTags,
 } from "@tabler/icons-react";
@@ -23,10 +25,27 @@ import {
 } from "@/components/dashboard/dashboard-charts";
 import { RemindersCard } from "@/components/dashboard/reminders-card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCurrencyFormatter } from "@/hooks/use-currency-formatter";
+import {
+  DASHBOARD_WIDGET_IDS,
+  DASHBOARD_WIDGET_LABEL,
+  type DashboardWidgetsState,
+} from "@/lib/dashboard-widgets";
 import { formatDate } from "@/lib/format";
+import { FINANCIAL_ACCOUNT_KIND_LABEL } from "@/lib/financial-account-kind";
 import { trpc } from "@/lib/trpc/react";
 
 function pct(n: number) {
@@ -51,7 +70,24 @@ const SALARY_PAY_BADGE: Record<"MONTHLY" | "BI_WEEKLY" | "ONE_OFF", string> = {
 
 export function DashboardView() {
   const fmt = useCurrencyFormatter();
+  const utils = trpc.useUtils();
   const { data, isLoading } = trpc.dashboard.summary.useQuery();
+  const updateWidgets = trpc.dashboard.updateWidgets.useMutation({
+    onSuccess: () => {
+      void utils.dashboard.summary.invalidate();
+      setCustomizeOpen(false);
+    },
+  });
+  const [customizeOpen, setCustomizeOpen] = React.useState(false);
+  const [widgetDraft, setWidgetDraft] = React.useState<DashboardWidgetsState | null>(
+    null,
+  );
+
+  React.useEffect(() => {
+    if (customizeOpen && data?.dashboardWidgets) {
+      setWidgetDraft({ ...data.dashboardWidgets });
+    }
+  }, [customizeOpen, data?.dashboardWidgets]);
 
   if (isLoading || !data) {
     return (
@@ -83,6 +119,7 @@ export function DashboardView() {
   const {
     totals,
     thisMonth,
+    needThisMonth,
     recentIncome,
     recentExpense,
     monthlyTrend,
@@ -90,6 +127,7 @@ export function DashboardView() {
     incomeBreakdownThisMonth,
     tagFlowThisMonth,
     reminders,
+    dashboardWidgets: vis,
   } = data;
   const savingsRate =
     thisMonth.income > 0
@@ -122,8 +160,19 @@ export function DashboardView() {
                 Cash flow, outlook, and recent activity.
               </p>
             </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="shrink-0 gap-2 self-start"
+              onClick={() => setCustomizeOpen(true)}
+            >
+              <IconSettings className="size-4" aria-hidden />
+              Customize
+            </Button>
           </div>
 
+          {vis.overview ? (
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <Card className="border-border/60 bg-card/80 shadow-sm backdrop-blur-sm transition-shadow hover:shadow-md">
               <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
@@ -186,11 +235,117 @@ export function DashboardView() {
               </CardContent>
             </Card>
           </div>
+          ) : null}
         </div>
       </section>
 
-      <RemindersCard reminders={reminders} formatMoney={fmt} />
+      {vis.needThisMonth ? (
+        <section>
+          <Card className="border-border/80 shadow-sm">
+            <CardHeader>
+              <CardTitle className="text-base">Need this month</CardTitle>
+              <CardDescription>
+                Planned amounts for {monthLabel} from your income and expense entries. “Still
+                to pay” and “Pending income” are based on Paid / Received flags.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="rounded-lg border border-border/60 bg-muted/30 p-4">
+                <p className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+                  Planned outflows
+                </p>
+                <p className="text-destructive mt-1 text-xl font-semibold tabular-nums">
+                  {fmt(needThisMonth.plannedOutflows)}
+                </p>
+                <p className="text-muted-foreground mt-2 text-xs">
+                  All expense rows dated this month.
+                </p>
+              </div>
+              <div className="rounded-lg border border-border/60 bg-muted/30 p-4">
+                <p className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+                  Still to pay
+                </p>
+                <p className="text-destructive mt-1 text-xl font-semibold tabular-nums">
+                  {fmt(needThisMonth.stillToPay)}
+                </p>
+                <p className="text-muted-foreground mt-2 text-xs">
+                  Expenses not marked paid yet.
+                </p>
+              </div>
+              <div className="rounded-lg border border-border/60 bg-muted/30 p-4">
+                <p className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+                  Already paid
+                </p>
+                <p className="text-foreground mt-1 text-xl font-semibold tabular-nums">
+                  {fmt(needThisMonth.alreadyPaid)}
+                </p>
+                <p className="text-muted-foreground mt-2 text-xs">
+                  Expenses marked paid this month.
+                </p>
+              </div>
+              <div className="rounded-lg border border-border/60 bg-muted/30 p-4">
+                <p className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+                  Expected income
+                </p>
+                <p className="text-chart-2 mt-1 text-xl font-semibold tabular-nums">
+                  {fmt(needThisMonth.expectedIncome)}
+                </p>
+                <p className="text-muted-foreground mt-2 text-xs">
+                  All income payments scheduled this month.
+                </p>
+              </div>
+              <div className="rounded-lg border border-border/60 bg-muted/30 p-4">
+                <p className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+                  Pending income
+                </p>
+                <p className="text-amber-700 dark:text-amber-400 mt-1 text-xl font-semibold tabular-nums">
+                  {fmt(needThisMonth.pendingIncome)}
+                </p>
+                <p className="text-muted-foreground mt-2 text-xs">
+                  Not marked received yet.
+                </p>
+              </div>
+              <div className="rounded-lg border border-border/60 bg-muted/30 p-4">
+                <p className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+                  Received income
+                </p>
+                <p className="text-chart-2 mt-1 text-xl font-semibold tabular-nums">
+                  {fmt(needThisMonth.receivedIncome)}
+                </p>
+                <p className="text-muted-foreground mt-2 text-xs">
+                  Marked received this month.
+                </p>
+              </div>
+              <div className="rounded-lg border border-primary/30 bg-primary/[0.06] p-4 sm:col-span-2 lg:col-span-3">
+                <p className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+                  Liquidity gap (still to pay − pending income)
+                </p>
+                <p
+                  className={`mt-1 text-2xl font-semibold tabular-nums ${
+                    needThisMonth.residualCashGap > 0
+                      ? "text-destructive"
+                      : needThisMonth.residualCashGap < 0
+                        ? "text-chart-2"
+                        : "text-foreground"
+                  }`}
+                >
+                  {fmt(needThisMonth.residualCashGap)}
+                </p>
+                <p className="text-muted-foreground mt-2 text-xs">
+                  Positive means you still need that much liquidity after expected inflows still
+                  marked pending. Negative means pending income covers unpaid expenses.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </section>
+      ) : null}
 
+      {vis.reminders ? (
+        <RemindersCard reminders={reminders} formatMoney={fmt} />
+      ) : null}
+
+      {vis.tagByTag ? (
       <section>
         <Card className="border-border/80 shadow-sm">
           <CardHeader>
@@ -212,7 +367,9 @@ export function DashboardView() {
           </CardContent>
         </Card>
       </section>
+      ) : null}
 
+      {vis.incomeOutlook ? (
       <section>
         <Card className="border-border/80 shadow-sm">
           <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
@@ -237,7 +394,9 @@ export function DashboardView() {
           </CardContent>
         </Card>
       </section>
+      ) : null}
 
+      {vis.cashFlow ? (
       <section className="grid gap-4 xl:grid-cols-12">
         <Card className="border-border/80 xl:col-span-8 shadow-sm">
           <CardHeader>
@@ -277,7 +436,9 @@ export function DashboardView() {
           />
         </div>
       </section>
+      ) : null}
 
+      {vis.insights ? (
       <section className="grid gap-4 md:grid-cols-3">
         <Card className="border-border/80 shadow-sm">
           <CardHeader>
@@ -358,7 +519,9 @@ export function DashboardView() {
           </CardContent>
         </Card>
       </section>
+      ) : null}
 
+      {vis.recentLists ? (
       <section className="grid gap-4 lg:grid-cols-2">
         <Card className="border-border/80 shadow-sm">
           <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
@@ -432,9 +595,10 @@ export function DashboardView() {
                             {row.tag.name}
                           </Badge>
                         ) : null}
-                        {row.bank ? (
+                        {row.financialAccount ? (
                           <Badge variant="outline" className="text-[10px] font-normal">
-                            {row.bank.name}
+                            {row.financialAccount.name} ·{" "}
+                            {FINANCIAL_ACCOUNT_KIND_LABEL[row.financialAccount.kind]}
                           </Badge>
                         ) : null}
                       </div>
@@ -502,9 +666,10 @@ export function DashboardView() {
                           {row.tag.name}
                         </Badge>
                       ) : null}
-                      {row.bank ? (
+                      {row.financialAccount ? (
                         <Badge variant="outline" className="text-[10px] font-normal">
-                          {row.bank.name}
+                          {row.financialAccount.name} ·{" "}
+                          {FINANCIAL_ACCOUNT_KIND_LABEL[row.financialAccount.kind]}
                         </Badge>
                       ) : null}
                     </div>
@@ -518,6 +683,57 @@ export function DashboardView() {
           </CardContent>
         </Card>
       </section>
+      ) : null}
+
+      <Dialog open={customizeOpen} onOpenChange={setCustomizeOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Customize dashboard</DialogTitle>
+            <DialogDescription>
+              Choose which sections appear. Your choices are saved to your account.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 py-2">
+            {widgetDraft
+              ? DASHBOARD_WIDGET_IDS.map((id) => (
+                  <div key={id} className="flex items-center gap-3">
+                    <Checkbox
+                      id={`dw-${id}`}
+                      checked={widgetDraft[id]}
+                      onCheckedChange={(c) =>
+                        setWidgetDraft((prev) =>
+                          prev ? { ...prev, [id]: c === true } : prev,
+                        )
+                      }
+                    />
+                    <Label htmlFor={`dw-${id}`} className="cursor-pointer font-normal leading-snug">
+                      {DASHBOARD_WIDGET_LABEL[id]}
+                    </Label>
+                  </div>
+                ))
+              : null}
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setCustomizeOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={!widgetDraft || updateWidgets.isPending}
+              onClick={() => {
+                if (!widgetDraft) return;
+                updateWidgets.mutate(widgetDraft);
+              }}
+            >
+              Save layout
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

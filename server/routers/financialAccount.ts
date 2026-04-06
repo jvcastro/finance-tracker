@@ -1,29 +1,32 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
+import { financialAccountKindSchema } from "@/lib/financial-account-kind";
 import { router, protectedProcedure } from "@/server/trpc";
 
-export const bankRouter = router({
+export const financialAccountRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
     const userId = ctx.session!.user!.id;
-    return ctx.prisma.bank.findMany({
+    return ctx.prisma.financialAccount.findMany({
       where: { userId },
-      orderBy: { name: "asc" },
+      orderBy: [{ kind: "asc" }, { name: "asc" }],
     });
   }),
   create: protectedProcedure
     .input(
       z.object({
         name: z.string().min(1).max(120),
+        kind: financialAccountKindSchema,
         notes: z.string().max(500).optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session!.user!.id;
-      return ctx.prisma.bank.create({
+      return ctx.prisma.financialAccount.create({
         data: {
           userId,
           name: input.name.trim(),
+          kind: input.kind,
           notes: input.notes?.trim() || null,
         },
       });
@@ -33,21 +36,23 @@ export const bankRouter = router({
       z.object({
         id: z.string(),
         name: z.string().min(1).max(120),
+        kind: financialAccountKindSchema,
         notes: z.string().max(500).optional().nullable(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session!.user!.id;
-      const bank = await ctx.prisma.bank.findFirst({
+      const row = await ctx.prisma.financialAccount.findFirst({
         where: { id: input.id, userId },
       });
-      if (!bank) {
+      if (!row) {
         throw new TRPCError({ code: "NOT_FOUND" });
       }
-      return ctx.prisma.bank.update({
+      return ctx.prisma.financialAccount.update({
         where: { id: input.id },
         data: {
           name: input.name.trim(),
+          kind: input.kind,
           notes: input.notes?.trim() || null,
         },
       });
@@ -56,12 +61,12 @@ export const bankRouter = router({
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session!.user!.id;
-      const bank = await ctx.prisma.bank.findFirst({
+      const row = await ctx.prisma.financialAccount.findFirst({
         where: { id: input.id, userId },
       });
-      if (!bank) {
+      if (!row) {
         throw new TRPCError({ code: "NOT_FOUND" });
       }
-      await ctx.prisma.bank.delete({ where: { id: input.id } });
+      await ctx.prisma.financialAccount.delete({ where: { id: input.id } });
     }),
 });

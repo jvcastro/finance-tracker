@@ -19,6 +19,19 @@ import {
 } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 
+/** Same logic as the table’s global filter — use for alternate mobile layouts. */
+export function filterRowsByGlobalFilter<T>(data: T[], filterValue: string): T[] {
+  const q = String(filterValue ?? "").toLowerCase().trim();
+  if (!q) return data;
+  try {
+    return data.filter((row) =>
+      JSON.stringify(row).toLowerCase().includes(q),
+    );
+  } catch {
+    return data;
+  }
+}
+
 function jsonRowGlobalFilter<TData>(): FilterFn<TData> {
   return (row, _columnId, filterValue) => {
     const q = String(filterValue ?? "").toLowerCase().trim();
@@ -43,6 +56,8 @@ interface DataTableProps<TData, TValue> {
   globalFilter?: string;
   onGlobalFilterChange?: (value: string) => void;
   filterPlaceholder?: string;
+  /** When true, filtering still applies but the search input is not rendered (e.g. shared input elsewhere). */
+  hideFilterInput?: boolean;
 }
 
 export function DataTable<TData, TValue>({
@@ -54,6 +69,7 @@ export function DataTable<TData, TValue>({
   globalFilter,
   onGlobalFilterChange,
   filterPlaceholder = "Search…",
+  hideFilterInput = false,
 }: DataTableProps<TData, TValue>) {
   const filterEnabled =
     globalFilter !== undefined && onGlobalFilterChange !== undefined;
@@ -76,7 +92,7 @@ export function DataTable<TData, TValue>({
 
   return (
     <div className="min-w-0 space-y-2">
-      {filterEnabled ? (
+      {filterEnabled && !hideFilterInput ? (
         <Input
           type="search"
           placeholder={filterPlaceholder}

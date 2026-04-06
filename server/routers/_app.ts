@@ -1,6 +1,6 @@
 import { router } from "@/server/trpc";
 import { authRegisterRouter } from "@/server/routers/auth-register";
-import { bankRouter } from "@/server/routers/bank";
+import { financialAccountRouter } from "@/server/routers/financialAccount";
 import { creditCardDebtRouter } from "@/server/routers/credit-card-debt";
 import { dashboardRouter } from "@/server/routers/dashboard";
 import { expenseRouter } from "@/server/routers/expense";
@@ -13,7 +13,7 @@ export const appRouter = router({
   auth: authRegisterRouter,
   dashboard: dashboardRouter,
   tag: tagRouter,
-  bank: bankRouter,
+  financialAccount: financialAccountRouter,
   income: incomeRouter,
   expense: expenseRouter,
   creditCardDebt: creditCardDebtRouter,

@@ -23,17 +23,17 @@ async function assertTag(
   }
 }
 
-async function assertBank(
+async function assertFinancialAccount(
   prisma: PrismaClient,
   userId: string,
-  bankId: string | null | undefined,
+  financialAccountId: string | null | undefined,
 ) {
-  if (!bankId) return;
-  const bank = await prisma.bank.findFirst({
-    where: { id: bankId, userId },
+  if (!financialAccountId) return;
+  const fa = await prisma.financialAccount.findFirst({
+    where: { id: financialAccountId, userId },
   });
-  if (!bank) {
-    throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid bank." });
+  if (!fa) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid account." });
   }
 }
 
@@ -47,7 +47,7 @@ const streamFields = z.object({
   amount: z.number().positive(),
   description: z.string().max(500).optional().nullable(),
   tagId: z.string().optional().nullable(),
-  bankId: z.string().optional().nullable(),
+  financialAccountId: z.string().optional().nullable(),
   paymentMethod: expensePaymentMethodSchema.optional(),
   paymentDay: z.number().int().min(1).max(31),
   startDate: z.coerce.date(),
@@ -74,6 +74,12 @@ const streamUpdateInput = streamFields
   .extend({ id: z.string() })
   .superRefine(streamRefine);
 
+const financialAccountSelect = {
+  id: true,
+  name: true,
+  kind: true,
+} as const;
+
 /** Narrow relation payloads (avoid `include` loading full nested models). */
 const expenseWithRelationsSelect = {
   id: true,
@@ -83,12 +89,12 @@ const expenseWithRelationsSelect = {
   description: true,
   tagId: true,
   expenseStreamId: true,
-  bankId: true,
+  financialAccountId: true,
   paymentMethod: true,
   paid: true,
   createdAt: true,
   tag: { select: { id: true, name: true } },
-  bank: { select: { id: true, name: true } },
+  financialAccount: { select: financialAccountSelect },
   expenseStream: { select: { id: true } },
 } satisfies Prisma.ExpenseSelect;
 
@@ -98,7 +104,7 @@ const expenseStreamWithRelationsSelect = {
   amount: true,
   description: true,
   tagId: true,
-  bankId: true,
+  financialAccountId: true,
   paymentMethod: true,
   paymentDay: true,
   startDate: true,
@@ -107,7 +113,7 @@ const expenseStreamWithRelationsSelect = {
   createdAt: true,
   updatedAt: true,
   tag: { select: { id: true, name: true } },
-  bank: { select: { id: true, name: true } },
+  financialAccount: { select: financialAccountSelect },
 } satisfies Prisma.ExpenseStreamSelect;
 
 export const expenseRouter = router({
@@ -167,7 +173,7 @@ export const expenseRouter = router({
         date: z.coerce.date(),
         description: z.string().max(500).optional(),
         tagId: z.string().optional().nullable(),
-        bankId: z.string().optional().nullable(),
+        financialAccountId: z.string().optional().nullable(),
         paymentMethod: expensePaymentMethodSchema.optional(),
         paid: z.boolean().optional(),
       }),
@@ -175,7 +181,7 @@ export const expenseRouter = router({
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session!.user!.id;
       await assertTag(ctx.prisma, userId, input.tagId);
-      await assertBank(ctx.prisma, userId, input.bankId);
+      await assertFinancialAccount(ctx.prisma, userId, input.financialAccountId);
       const row = await ctx.prisma.expense.create({
         data: {
           userId,
@@ -183,7 +189,7 @@ export const expenseRouter = router({
           date: input.date,
           description: input.description,
           tagId: input.tagId ?? undefined,
-          bankId: input.bankId ?? undefined,
+          financialAccountId: input.financialAccountId ?? undefined,
           paymentMethod: input.paymentMethod ?? "MANUAL",
           paid: input.paid ?? false,
         },
@@ -200,7 +206,7 @@ export const expenseRouter = router({
         date: z.coerce.date(),
         description: z.string().max(500).optional().nullable(),
         tagId: z.string().optional().nullable(),
-        bankId: z.string().optional().nullable(),
+        financialAccountId: z.string().optional().nullable(),
         paymentMethod: expensePaymentMethodSchema,
         paid: z.boolean(),
       }),
@@ -214,7 +220,7 @@ export const expenseRouter = router({
         throw new TRPCError({ code: "NOT_FOUND" });
       }
       await assertTag(ctx.prisma, userId, input.tagId);
-      await assertBank(ctx.prisma, userId, input.bankId);
+      await assertFinancialAccount(ctx.prisma, userId, input.financialAccountId);
       const row = await ctx.prisma.expense.update({
         where: { id: input.id },
         data: {
@@ -222,7 +228,7 @@ export const expenseRouter = router({
           date: input.date,
           description: input.description,
           tagId: input.tagId ?? undefined,
-          bankId: input.bankId ?? undefined,
+          financialAccountId: input.financialAccountId ?? undefined,
           paymentMethod: input.paymentMethod,
           paid: input.paid,
         },
@@ -281,14 +287,14 @@ export const expenseRouter = router({
       .mutation(async ({ ctx, input }) => {
         const userId = ctx.session!.user!.id;
         await assertTag(ctx.prisma, userId, input.tagId);
-        await assertBank(ctx.prisma, userId, input.bankId);
+        await assertFinancialAccount(ctx.prisma, userId, input.financialAccountId);
         const row = await ctx.prisma.expenseStream.create({
           data: {
             userId,
             amount: input.amount,
             description: input.description,
             tagId: input.tagId ?? undefined,
-            bankId: input.bankId ?? undefined,
+            financialAccountId: input.financialAccountId ?? undefined,
             paymentMethod: input.paymentMethod ?? "MANUAL",
             paymentDay: input.paymentDay,
             startDate: input.startDate,
@@ -311,14 +317,14 @@ export const expenseRouter = router({
           throw new TRPCError({ code: "NOT_FOUND" });
         }
         await assertTag(ctx.prisma, userId, input.tagId);
-        await assertBank(ctx.prisma, userId, input.bankId);
+        await assertFinancialAccount(ctx.prisma, userId, input.financialAccountId);
         const row = await ctx.prisma.expenseStream.update({
           where: { id: input.id },
           data: {
             amount: input.amount,
             description: input.description,
             tagId: input.tagId ?? undefined,
-            bankId: input.bankId ?? undefined,
+            financialAccountId: input.financialAccountId ?? undefined,
             paymentMethod: input.paymentMethod ?? existing.paymentMethod,
             paymentDay: input.paymentDay,
             startDate: input.startDate,

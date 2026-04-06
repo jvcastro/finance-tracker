@@ -21,7 +21,7 @@ import { parseAsString, parseAsStringLiteral, useQueryState } from "nuqs";
 import { toast } from "sonner";
 import { z } from "zod";
 
-import { DataTable } from "@/components/data-table";
+import { DataTable, filterRowsByGlobalFilter } from "@/components/data-table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -47,10 +47,28 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useCurrencyFormatter } from "@/hooks/use-currency-formatter";
 import { formatDate, formatIncomePeriod } from "@/lib/format";
+import {
+  FINANCIAL_ACCOUNT_KIND_LABEL,
+  type FinancialAccountKindValue,
+} from "@/lib/financial-account-kind";
 import { trpc } from "@/lib/trpc/react";
+
+type IncomeAccountRef = {
+  id: string;
+  name: string;
+  kind: FinancialAccountKindValue;
+};
 
 const streamFormSchema = z
   .object({
@@ -64,7 +82,7 @@ const streamFormSchema = z
     paymentDay: z.coerce.number().int().min(1).max(31),
     secondPaymentDay: z.coerce.number().int().min(1).max(31).optional(),
     tagId: z.string().optional(),
-    bankId: z.string().optional(),
+    financialAccountId: z.string().optional(),
     isActive: z.boolean(),
   })
   .superRefine((data, ctx) => {
@@ -134,8 +152,8 @@ type StreamRow = {
   isActive: boolean;
   tagId: string | null;
   tag: { id: string; name: string } | null;
-  bankId: string | null;
-  bank: { id: string; name: string } | null;
+  financialAccountId: string | null;
+  financialAccount: IncomeAccountRef | null;
 };
 
 const SOURCE_LABEL: Record<StreamRow["sourceType"], string> = {
@@ -158,7 +176,7 @@ const recordEditSchema = z.object({
   received: z.boolean(),
   description: z.string().optional(),
   tagId: z.string().optional(),
-  bankId: z.string().optional(),
+  financialAccountId: z.string().optional(),
 });
 
 const manualSchema = z
@@ -171,7 +189,7 @@ const manualSchema = z
     description: z.string().optional(),
     received: z.boolean(),
     tagId: z.string().optional(),
-    bankId: z.string().optional(),
+    financialAccountId: z.string().optional(),
   })
   .superRefine((data, ctx) => {
     if (data.sourceType === "SALARY" && !data.salaryPaySchedule) {
@@ -201,8 +219,8 @@ type RecordRow = {
   sourceName: string | null;
   salaryPaySchedule: "MONTHLY" | "BI_WEEKLY" | "ONE_OFF" | null;
   tag: { id: string; name: string } | null;
-  bankId: string | null;
-  bank: { id: string; name: string } | null;
+  financialAccountId: string | null;
+  financialAccount: IncomeAccountRef | null;
   incomeStream: {
     sourceType: string;
     sourceName: string | null;
@@ -323,7 +341,16 @@ export function IncomePage() {
   });
 
   const { data: tags = [] } = trpc.tag.list.useQuery();
-  const { data: banks = [] } = trpc.bank.list.useQuery();
+  const { data: accounts = [] } = trpc.financialAccount.list.useQuery();
+
+  const filteredRecords = React.useMemo(
+    () => filterRowsByGlobalFilter(records as RecordRow[], q),
+    [records, q],
+  );
+  const filteredStreams = React.useMemo(
+    () => filterRowsByGlobalFilter(streams as StreamRow[], q),
+    [streams, q],
+  );
 
   const [streamOpen, setStreamOpen] = React.useState(false);
   const [editingStream, setEditingStream] = React.useState<StreamRow | null>(
@@ -336,6 +363,10 @@ export function IncomePage() {
   );
 
   const [manualOpen, setManualOpen] = React.useState(false);
+
+  const [detailRecord, setDetailRecord] = React.useState<RecordRow | null>(null);
+  const [detailIncomeStream, setDetailIncomeStream] =
+    React.useState<StreamRow | null>(null);
 
   const streamForm = useForm<StreamFormValues>({
     resolver: zodResolver(streamFormSchema),
@@ -350,7 +381,7 @@ export function IncomePage() {
       paymentDay: 15,
       secondPaymentDay: 30,
       tagId: "",
-      bankId: "",
+      financialAccountId: "",
       isActive: true,
     },
   });
@@ -373,7 +404,7 @@ export function IncomePage() {
         paymentDay: editingStream.paymentDay,
         secondPaymentDay: editingStream.secondPaymentDay ?? 30,
         tagId: editingStream.tagId ?? "",
-        bankId: editingStream.bankId ?? "",
+        financialAccountId: editingStream.financialAccountId ?? "",
         isActive: editingStream.isActive,
       });
     } else {
@@ -388,7 +419,7 @@ export function IncomePage() {
         paymentDay: 15,
         secondPaymentDay: 30,
         tagId: "",
-        bankId: "",
+        financialAccountId: "",
         isActive: true,
       });
     }
@@ -401,7 +432,7 @@ export function IncomePage() {
       received: false,
       description: "",
       tagId: "",
-      bankId: "",
+      financialAccountId: "",
     },
   });
 
@@ -412,7 +443,7 @@ export function IncomePage() {
         received: editingRecord.received,
         description: editingRecord.description ?? "",
         tagId: editingRecord.tag?.id ?? "",
-        bankId: editingRecord.bankId ?? "",
+        financialAccountId: editingRecord.financialAccountId ?? "",
       });
     }
   }, [editingRecord, recordForm, recordOpen]);
@@ -428,7 +459,7 @@ export function IncomePage() {
       description: "",
       received: false,
       tagId: "",
-      bankId: "",
+      financialAccountId: "",
     },
   });
 
@@ -455,7 +486,7 @@ export function IncomePage() {
       paymentDay: values.paymentDay,
       secondPaymentDay: isBiWeekly ? values.secondPaymentDay ?? null : null,
       tagId: values.tagId || null,
-      bankId: values.bankId || null,
+      financialAccountId: values.financialAccountId || null,
       isActive: values.isActive,
     };
     if (editingStream) {
@@ -475,7 +506,7 @@ export function IncomePage() {
       received: values.received,
       description: values.description || null,
       tagId: values.tagId || null,
-      bankId: values.bankId || null,
+      financialAccountId: values.financialAccountId || null,
     });
     setRecordOpen(false);
     setEditingRecord(null);
@@ -495,7 +526,7 @@ export function IncomePage() {
       description: values.description || undefined,
       received: values.received,
       tagId: values.tagId || null,
-      bankId: values.bankId || null,
+      financialAccountId: values.financialAccountId || null,
     });
     setManualOpen(false);
   }
@@ -541,10 +572,21 @@ export function IncomePage() {
       cell: ({ row }) => row.original.tag?.name ?? "—",
     },
     {
-      id: "bank",
-      header: "Bank",
-      meta: { className: "hidden lg:table-cell" },
-      cell: ({ row }) => row.original.bank?.name ?? "—",
+      id: "financialAccount",
+      header: "Account",
+      meta: { className: "hidden lg:table-cell min-w-[10rem]" },
+      cell: ({ row }) => {
+        const fa = row.original.financialAccount;
+        if (!fa) return "—";
+        return (
+          <span className="text-sm">
+            <span>{fa.name}</span>
+            <span className="text-muted-foreground ml-1 text-xs">
+              ({FINANCIAL_ACCOUNT_KIND_LABEL[fa.kind]})
+            </span>
+          </span>
+        );
+      },
     },
     {
       accessorKey: "amount",
@@ -579,7 +621,12 @@ export function IncomePage() {
       cell: ({ row }) => (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon-xs" aria-label="Actions">
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className="px-2"
+              aria-label="Actions"
+            >
               <IconDotsVertical className="size-4" />
             </Button>
           </DropdownMenuTrigger>
@@ -641,10 +688,21 @@ export function IncomePage() {
       cell: ({ row }) => SOURCE_LABEL[resolveRecordSourceType(row.original)],
     },
     {
-      id: "bank",
-      header: "Bank",
-      meta: { className: "hidden lg:table-cell" },
-      cell: ({ row }) => row.original.bank?.name ?? "—",
+      id: "financialAccount",
+      header: "Account",
+      meta: { className: "hidden lg:table-cell min-w-[10rem]" },
+      cell: ({ row }) => {
+        const fa = row.original.financialAccount;
+        if (!fa) return "—";
+        return (
+          <span className="text-sm">
+            <span>{fa.name}</span>
+            <span className="text-muted-foreground ml-1 text-xs">
+              ({FINANCIAL_ACCOUNT_KIND_LABEL[fa.kind]})
+            </span>
+          </span>
+        );
+      },
     },
     {
       id: "status",
@@ -681,7 +739,12 @@ export function IncomePage() {
       cell: ({ row }) => (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon-xs" aria-label="Actions">
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className="px-2"
+              aria-label="Actions"
+            >
               <IconDotsVertical className="size-4" />
             </Button>
           </DropdownMenuTrigger>
@@ -695,7 +758,7 @@ export function IncomePage() {
                   received: !r.received,
                   description: r.description,
                   tagId: r.tag?.id ?? null,
-                  bankId: r.bankId ?? null,
+                  financialAccountId: r.financialAccountId ?? null,
                 });
               }}
             >
@@ -813,13 +876,134 @@ export function IncomePage() {
           {loadingRecords ? (
             <p className="text-muted-foreground text-sm">Loading…</p>
           ) : (
-            <DataTable
-              columns={recordColumns}
-              data={records as RecordRow[]}
-              mobileScrollHint="Swipe sideways to see all columns."
-              globalFilter={q}
-              onGlobalFilterChange={setQ}
-            />
+            <>
+              <Input
+                type="search"
+                placeholder="Search…"
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                className="max-w-sm"
+                aria-label="Search payment records"
+              />
+              <div className="hidden sm:block">
+                <DataTable
+                  columns={recordColumns}
+                  data={records as RecordRow[]}
+                  mobileScrollHint="Swipe sideways to see all columns."
+                  globalFilter={q}
+                  onGlobalFilterChange={setQ}
+                  hideFilterInput
+                />
+              </div>
+              <div className="sm:hidden space-y-2">
+                {filteredRecords.length === 0 ? (
+                  <div className="text-muted-foreground rounded-lg border border-border/80 bg-card px-4 py-8 text-center text-sm shadow-sm">
+                    {Boolean(q.trim()) && records.length > 0
+                      ? "No rows match your filter."
+                      : "No rows yet."}
+                  </div>
+                ) : (
+                  filteredRecords.map((row) => (
+                    <div
+                      key={row.id}
+                      className="flex items-stretch gap-1 rounded-lg border border-border/80 bg-card shadow-sm"
+                    >
+                      <button
+                        type="button"
+                        className="hover:bg-muted/50 active:bg-muted/70 min-w-0 flex-1 px-3 py-3 text-left text-sm transition-colors"
+                        onClick={() => setDetailRecord(row)}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0 flex-1">
+                            <p className="text-foreground line-clamp-2 font-medium leading-snug">
+                              {recordLabel(row)}
+                            </p>
+                            <p className="text-muted-foreground mt-1 flex flex-wrap items-center gap-2 text-xs">
+                              {row.received ? (
+                                <Badge variant="secondary" className="font-normal">
+                                  Received
+                                </Badge>
+                              ) : (
+                                <Badge
+                                  variant="outline"
+                                  className="font-normal text-amber-800 dark:text-amber-400"
+                                >
+                                  Pending
+                                </Badge>
+                              )}
+                              <span>
+                                {formatDate(row.scheduledDate)}
+                                {row.financialAccount
+                                  ? ` · ${row.financialAccount.name} (${FINANCIAL_ACCOUNT_KIND_LABEL[row.financialAccount.kind]})`
+                                  : ""}
+                              </span>
+                            </p>
+                          </div>
+                          <span className="text-chart-2 shrink-0 font-semibold tabular-nums">
+                            {fmt(row.amount)}
+                          </span>
+                        </div>
+                      </button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            className="shrink-0 self-center px-2"
+                            aria-label="Actions"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <IconDotsVertical className="size-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem
+                            disabled={updateRecordMut.isPending}
+                            onClick={() => {
+                              updateRecordMut.mutate({
+                                id: row.id,
+                                received: !row.received,
+                                description: row.description,
+                                tagId: row.tag?.id ?? null,
+                                financialAccountId: row.financialAccountId ?? null,
+                              });
+                            }}
+                          >
+                            {row.received ? (
+                              <>
+                                <IconCircle className="size-4" />
+                                Mark as pending
+                              </>
+                            ) : (
+                              <>
+                                <IconCircleCheck className="size-4" />
+                                Mark as received
+                              </>
+                            )}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => {
+                              setEditingRecord(row);
+                              setRecordOpen(true);
+                            }}
+                          >
+                            <IconPencil className="size-4" />
+                            Edit
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            variant="destructive"
+                            onClick={() => deleteRecordMut.mutate({ id: row.id })}
+                          >
+                            <IconTrash className="size-4" />
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  ))
+                )}
+              </div>
+            </>
           )}
           </div>
         </TabsContent>
@@ -840,13 +1024,100 @@ export function IncomePage() {
           {loadingStreams ? (
             <p className="text-muted-foreground text-sm">Loading…</p>
           ) : (
-            <DataTable
-              columns={streamColumns}
-              data={streams as StreamRow[]}
-              mobileScrollHint="Swipe sideways to see all columns."
-              globalFilter={q}
-              onGlobalFilterChange={setQ}
-            />
+            <>
+              <Input
+                type="search"
+                placeholder="Search…"
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                className="max-w-sm"
+                aria-label="Search recurring income"
+              />
+              <div className="hidden sm:block">
+                <DataTable
+                  columns={streamColumns}
+                  data={streams as StreamRow[]}
+                  mobileScrollHint="Swipe sideways to see all columns."
+                  globalFilter={q}
+                  onGlobalFilterChange={setQ}
+                  hideFilterInput
+                />
+              </div>
+              <div className="sm:hidden space-y-2">
+                {filteredStreams.length === 0 ? (
+                  <div className="text-muted-foreground rounded-lg border border-border/80 bg-card px-4 py-8 text-center text-sm shadow-sm">
+                    {Boolean(q.trim()) && streams.length > 0
+                      ? "No rows match your filter."
+                      : "No rows yet."}
+                  </div>
+                ) : (
+                  filteredStreams.map((row) => (
+                    <div
+                      key={row.id}
+                      className="flex items-stretch gap-1 rounded-lg border border-border/80 bg-card shadow-sm"
+                    >
+                      <button
+                        type="button"
+                        className="hover:bg-muted/50 active:bg-muted/70 min-w-0 flex-1 px-3 py-3 text-left text-sm transition-colors"
+                        onClick={() => setDetailIncomeStream(row)}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0 flex-1">
+                            <p className="text-foreground line-clamp-2 font-medium leading-snug">
+                              {row.sourceName?.trim() ||
+                                row.description?.trim() ||
+                                SOURCE_LABEL[row.sourceType]}
+                            </p>
+                            <p className="text-muted-foreground mt-1 text-xs">
+                              {SOURCE_LABEL[row.sourceType]}
+                              {" · "}
+                              {formatIncomePeriod(row.startDate, row.endDate)}
+                              {row.financialAccount
+                                ? ` · ${row.financialAccount.name}`
+                                : ""}
+                            </p>
+                          </div>
+                          <span className="text-chart-2 shrink-0 font-semibold tabular-nums">
+                            {fmt(row.amount)}
+                          </span>
+                        </div>
+                      </button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            className="shrink-0 self-center px-2"
+                            aria-label="Actions"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <IconDotsVertical className="size-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem
+                            onClick={() => {
+                              setEditingStream(row);
+                              setStreamOpen(true);
+                            }}
+                          >
+                            <IconPencil className="size-4" />
+                            Edit
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            variant="destructive"
+                            onClick={() => deleteStreamMut.mutate({ id: row.id })}
+                          >
+                            <IconTrash className="size-4" />
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  ))
+                )}
+              </div>
+            </>
           )}
           </div>
         </TabsContent>
@@ -1029,11 +1300,11 @@ export function IncomePage() {
               </Select>
             </div>
             <div className="grid gap-2">
-              <Label>Bank (optional)</Label>
+              <Label>Account (optional)</Label>
               <Select
-                value={streamForm.watch("bankId") || "__none__"}
+                value={streamForm.watch("financialAccountId") || "__none__"}
                 onValueChange={(v) =>
-                  streamForm.setValue("bankId", v === "__none__" ? "" : v)
+                  streamForm.setValue("financialAccountId", v === "__none__" ? "" : v)
                 }
               >
                 <SelectTrigger>
@@ -1041,15 +1312,15 @@ export function IncomePage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__none__">None</SelectItem>
-                  {banks.map((b) => (
-                    <SelectItem key={b.id} value={b.id}>
-                      {b.name}
+                  {accounts.map((a) => (
+                    <SelectItem key={a.id} value={a.id}>
+                      {a.name} ({FINANCIAL_ACCOUNT_KIND_LABEL[a.kind]})
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
               <p className="text-muted-foreground text-xs">
-                Add or manage banks in{" "}
+                Add or manage accounts in{" "}
                 <Link href="/settings" className="underline underline-offset-2">
                   Settings
                 </Link>
@@ -1159,11 +1430,11 @@ export function IncomePage() {
                 </Select>
               </div>
               <div className="grid gap-2">
-                <Label>Bank (optional)</Label>
+                <Label>Account (optional)</Label>
                 <Select
-                  value={recordForm.watch("bankId") || "__none__"}
+                  value={recordForm.watch("financialAccountId") || "__none__"}
                   onValueChange={(v) =>
-                    recordForm.setValue("bankId", v === "__none__" ? "" : v)
+                    recordForm.setValue("financialAccountId", v === "__none__" ? "" : v)
                   }
                 >
                   <SelectTrigger>
@@ -1171,15 +1442,15 @@ export function IncomePage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__none__">None</SelectItem>
-                    {banks.map((b) => (
-                      <SelectItem key={b.id} value={b.id}>
-                        {b.name}
+                    {accounts.map((a) => (
+                      <SelectItem key={a.id} value={a.id}>
+                        {a.name} ({FINANCIAL_ACCOUNT_KIND_LABEL[a.kind]})
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
                 <p className="text-muted-foreground text-xs">
-                  Add or manage banks in{" "}
+                  Add or manage accounts in{" "}
                   <Link href="/settings" className="underline underline-offset-2">
                     Settings
                   </Link>
@@ -1316,11 +1587,11 @@ export function IncomePage() {
             </Select>
           </div>
             <div className="grid gap-2">
-              <Label>Bank (optional)</Label>
+              <Label>Account (optional)</Label>
               <Select
-                value={manualForm.watch("bankId") || "__none__"}
+                value={manualForm.watch("financialAccountId") || "__none__"}
                 onValueChange={(v) =>
-                  manualForm.setValue("bankId", v === "__none__" ? "" : v)
+                  manualForm.setValue("financialAccountId", v === "__none__" ? "" : v)
                 }
               >
                 <SelectTrigger>
@@ -1328,15 +1599,15 @@ export function IncomePage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__none__">None</SelectItem>
-                  {banks.map((b) => (
-                    <SelectItem key={b.id} value={b.id}>
-                      {b.name}
+                  {accounts.map((a) => (
+                    <SelectItem key={a.id} value={a.id}>
+                      {a.name} ({FINANCIAL_ACCOUNT_KIND_LABEL[a.kind]})
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
               <p className="text-muted-foreground text-xs">
-                Add or manage banks in{" "}
+                Add or manage accounts in{" "}
                 <Link href="/settings" className="underline underline-offset-2">
                   Settings
                 </Link>
@@ -1351,6 +1622,243 @@ export function IncomePage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <Sheet
+        open={detailRecord != null}
+        onOpenChange={(v) => {
+          if (!v) setDetailRecord(null);
+        }}
+      >
+        <SheetContent
+          side="bottom"
+          className="max-h-[90vh] overflow-y-auto rounded-t-2xl px-0 sm:max-w-lg"
+        >
+          {detailRecord ? (
+            <>
+              <SheetHeader className="px-6 pb-2 text-left">
+                <SheetTitle className="text-base leading-snug">
+                  {recordLabel(detailRecord)}
+                </SheetTitle>
+                <SheetDescription className="sr-only">
+                  View payment details. Use Edit to change this record.
+                </SheetDescription>
+              </SheetHeader>
+              <div className="text-foreground space-y-0 px-6 text-sm">
+                <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
+                  <span className="text-muted-foreground">Amount</span>
+                  <span className="text-chart-2 font-semibold tabular-nums">
+                    {fmt(detailRecord.amount)}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
+                  <span className="text-muted-foreground">Pay date</span>
+                  <span>{formatDate(detailRecord.scheduledDate)}</span>
+                </div>
+                <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
+                  <span className="text-muted-foreground">Kind</span>
+                  <span>
+                    {detailRecord.incomeStreamId ? "Recurring" : "Manual"}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
+                  <span className="text-muted-foreground">Type</span>
+                  <span>
+                    {SOURCE_LABEL[resolveRecordSourceType(detailRecord)]}
+                  </span>
+                </div>
+                {resolveRecordSourceType(detailRecord) === "SALARY" &&
+                detailRecord.salaryPaySchedule ? (
+                  <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
+                    <span className="text-muted-foreground">Salary pay</span>
+                    <span className="text-right">
+                      {SALARY_SCHEDULE_LABEL[detailRecord.salaryPaySchedule]}
+                    </span>
+                  </div>
+                ) : null}
+                <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
+                  <span className="text-muted-foreground">Status</span>
+                  <span>{detailRecord.received ? "Received" : "Pending"}</span>
+                </div>
+                <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
+                  <span className="text-muted-foreground">Tag</span>
+                  <span className="text-right">{detailRecord.tag?.name ?? "—"}</span>
+                </div>
+                <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
+                  <span className="text-muted-foreground">Account</span>
+                  <span className="text-right">
+                    {detailRecord.financialAccount
+                      ? `${detailRecord.financialAccount.name} (${FINANCIAL_ACCOUNT_KIND_LABEL[detailRecord.financialAccount.kind]})`
+                      : "—"}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-4 py-2.5">
+                  <span className="text-muted-foreground">Description</span>
+                  <span className="text-right">
+                    {detailRecord.description?.trim() || "—"}
+                  </span>
+                </div>
+              </div>
+              <SheetFooter className="mt-auto grid grid-cols-2 gap-2 border-t border-border/80 p-6 pt-4">
+                <Button
+                  type="button"
+                  variant="default"
+                  className="min-w-0"
+                  disabled={updateRecordMut.isPending}
+                  onClick={() => {
+                    const r = detailRecord;
+                    if (!r) return;
+                    updateRecordMut.mutate(
+                      {
+                        id: r.id,
+                        received: !r.received,
+                        description: r.description,
+                        tagId: r.tag?.id ?? null,
+                        financialAccountId: r.financialAccountId ?? null,
+                      },
+                      {
+                        onSuccess: () => {
+                          setDetailRecord((d) =>
+                            d && d.id === r.id
+                              ? { ...d, received: !d.received }
+                              : d,
+                          );
+                        },
+                      },
+                    );
+                  }}
+                >
+                  {detailRecord.received ? (
+                    <>
+                      <IconCircle className="size-4" />
+                      Mark as pending
+                    </>
+                  ) : (
+                    <>
+                      <IconCircleCheck className="size-4" />
+                      Mark as received
+                    </>
+                  )}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="min-w-0"
+                  onClick={() => {
+                    const r = detailRecord;
+                    setDetailRecord(null);
+                    setEditingRecord(r);
+                    setRecordOpen(true);
+                  }}
+                >
+                  <IconPencil className="size-4" />
+                  Edit
+                </Button>
+              </SheetFooter>
+            </>
+          ) : null}
+        </SheetContent>
+      </Sheet>
+
+      <Sheet
+        open={detailIncomeStream != null}
+        onOpenChange={(v) => {
+          if (!v) setDetailIncomeStream(null);
+        }}
+      >
+        <SheetContent
+          side="bottom"
+          className="max-h-[90vh] overflow-y-auto rounded-t-2xl px-0 sm:max-w-lg"
+        >
+          {detailIncomeStream ? (
+            <>
+              <SheetHeader className="px-6 pb-2 text-left">
+                <SheetTitle className="text-base leading-snug">
+                  {detailIncomeStream.sourceName?.trim() ||
+                    detailIncomeStream.description?.trim() ||
+                    SOURCE_LABEL[detailIncomeStream.sourceType]}
+                </SheetTitle>
+                <SheetDescription className="sr-only">
+                  View recurring income details. Use Edit to change this stream.
+                </SheetDescription>
+              </SheetHeader>
+              <div className="text-foreground space-y-0 px-6 text-sm">
+                <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
+                  <span className="text-muted-foreground">Amount</span>
+                  <span className="text-chart-2 font-semibold tabular-nums">
+                    {fmt(detailIncomeStream.amount)}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
+                  <span className="text-muted-foreground">Source</span>
+                  <span>{SOURCE_LABEL[detailIncomeStream.sourceType]}</span>
+                </div>
+                {detailIncomeStream.sourceType === "SALARY" &&
+                detailIncomeStream.salaryPaySchedule ? (
+                  <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
+                    <span className="text-muted-foreground">Salary pay</span>
+                    <span className="text-right">
+                      {SALARY_SCHEDULE_LABEL[detailIncomeStream.salaryPaySchedule]}
+                    </span>
+                  </div>
+                ) : null}
+                <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
+                  <span className="text-muted-foreground">Payment days</span>
+                  <span className="text-right">
+                    {formatStreamPayDays(detailIncomeStream)}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
+                  <span className="text-muted-foreground">Active period</span>
+                  <span className="text-right">
+                    {formatIncomePeriod(
+                      detailIncomeStream.startDate,
+                      detailIncomeStream.endDate,
+                    )}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
+                  <span className="text-muted-foreground">Tag</span>
+                  <span className="text-right">
+                    {detailIncomeStream.tag?.name ?? "—"}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
+                  <span className="text-muted-foreground">Account</span>
+                  <span className="text-right">
+                    {detailIncomeStream.financialAccount
+                      ? `${detailIncomeStream.financialAccount.name} (${FINANCIAL_ACCOUNT_KIND_LABEL[detailIncomeStream.financialAccount.kind]})`
+                      : "—"}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
+                  <span className="text-muted-foreground">Description</span>
+                  <span className="text-right">
+                    {detailIncomeStream.description?.trim() || "—"}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-4 py-2.5">
+                  <span className="text-muted-foreground">Active</span>
+                  <span>{detailIncomeStream.isActive ? "Yes" : "Off"}</span>
+                </div>
+              </div>
+              <SheetFooter className="border-t border-border/80 sm:flex-col">
+                <Button
+                  className="w-full"
+                  onClick={() => {
+                    const r = detailIncomeStream;
+                    setDetailIncomeStream(null);
+                    setEditingStream(r);
+                    setStreamOpen(true);
+                  }}
+                >
+                  <IconPencil className="size-4" />
+                  Edit
+                </Button>
+              </SheetFooter>
+            </>
+          ) : null}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

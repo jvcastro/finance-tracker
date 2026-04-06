@@ -113,7 +113,7 @@ export async function ensureIncomeRecordsForMonth(
             amount: stream.amount,
             received: false,
             tagId: stream.tagId,
-            bankId: stream.bankId,
+            financialAccountId: stream.financialAccountId,
           },
         ],
         skipDuplicates: true,
@@ -126,7 +126,7 @@ export async function ensureIncomeRecordsForMonth(
 }
 
 /**
- * Pushes current stream fields (amount, tag, bank, description) onto existing payment
+ * Pushes current stream fields (amount, tag, account, description) onto existing payment
  * rows for that stream in this month so “Sync month” reflects recurring edits.
  * Does not change received status.
  */
@@ -164,7 +164,7 @@ export async function syncIncomeRecordsFromStreamsForMonth(
         data: {
           amount: stream.amount,
           tagId: stream.tagId,
-          bankId: stream.bankId,
+          financialAccountId: stream.financialAccountId,
           description: stream.description,
         },
       }),

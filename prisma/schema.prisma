@@ -18,8 +18,8 @@ model User {
   accounts Account[]
   sessions Session[]
 
-  tags            Tag[]
-  banks           Bank[]
+  tags               Tag[]
+  financialAccounts  FinancialAccount[]
   incomeStreams   IncomeStream[]
   expenseStreams  ExpenseStream[]
   incomes         Income[]
@@ -78,15 +78,24 @@ model Tag {
   @@unique([userId, name])
 }
 
-/// Financial institutions you use (checking, savings, card issuers, etc.).
-model Bank {
-  id        String   @id @default(cuid())
+/// Savings, checking, cards, e-wallets (GCash, Maya), or cash — where money is held or charged.
+enum FinancialAccountKind {
+  SAVINGS
+  CHECKING
+  CREDIT_CARD
+  E_WALLET
+  CASH
+}
+
+model FinancialAccount {
+  id        String               @id @default(cuid())
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   name      String
+  kind      FinancialAccountKind
   notes     String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
   expenseStreams ExpenseStream[]
   expenses       Expense[]
   incomeStreams  IncomeStream[]
@@ -128,8 +137,8 @@ model IncomeStream {
   description       String?
   tagId             String?
   tag               Tag?               @relation(fields: [tagId], references: [id], onDelete: SetNull)
-  bankId            String?
-  bank              Bank?              @relation(fields: [bankId], references: [id], onDelete: SetNull)
+  financialAccountId String?
+  financialAccount   FinancialAccount? @relation(fields: [financialAccountId], references: [id], onDelete: SetNull)
   isActive          Boolean            @default(true)
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
@@ -152,8 +161,8 @@ model Income {
   description    String?
   tagId          String?
   tag            Tag?          @relation(fields: [tagId], references: [id], onDelete: SetNull)
-  bankId         String?
-  bank           Bank?         @relation(fields: [bankId], references: [id], onDelete: SetNull)
+  financialAccountId String?
+  financialAccount   FinancialAccount? @relation(fields: [financialAccountId], references: [id], onDelete: SetNull)
   /// Only when incomeStreamId is null (manual entry).
   sourceType        IncomeSourceType?
   sourceName        String?
@@ -181,8 +190,8 @@ model ExpenseStream {
   description String?
   tagId       String?
   tag         Tag?      @relation(fields: [tagId], references: [id], onDelete: SetNull)
-  bankId      String?
-  bank        Bank?     @relation(fields: [bankId], references: [id], onDelete: SetNull)
+  financialAccountId String?
+  financialAccount   FinancialAccount? @relation(fields: [financialAccountId], references: [id], onDelete: SetNull)
   /// e.g. ACH debit vs card autopay vs you pay manually.
   paymentMethod ExpensePaymentMethod @default(MANUAL)
   /// Day of month the charge occurs (1–31; clamped to last day in month).
@@ -208,8 +217,8 @@ model Expense {
   tag         Tag?     @relation(fields: [tagId], references: [id], onDelete: SetNull)
   expenseStreamId String?
   expenseStream   ExpenseStream? @relation(fields: [expenseStreamId], references: [id], onDelete: Cascade)
-  bankId      String?
-  bank        Bank?    @relation(fields: [bankId], references: [id], onDelete: SetNull)
+  financialAccountId String?
+  financialAccount   FinancialAccount? @relation(fields: [financialAccountId], references: [id], onDelete: SetNull)
   /// Mirrors recurring template when generated from a stream.
   paymentMethod ExpensePaymentMethod @default(MANUAL)
   /// User marked this charge as paid (e.g. settled the card / bill).
@@ -238,4 +247,6 @@ model AppSettings {
   user         User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   currency     String @default("PHP")
   weekStartsOn Int    @default(0)
+  /// Per-user dashboard section visibility: `{ "overview": true, "needThisMonth": false, ... }`
+  dashboardWidgets Json?
 }
