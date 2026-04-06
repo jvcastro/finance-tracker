@@ -193,7 +193,7 @@ export function SettingsPage() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card data-tour="settings-tags">
         <CardHeader>
           <CardTitle className="text-base">Tags</CardTitle>
           <CardDescription>
@@ -350,7 +350,7 @@ function AccountsSection() {
   }
 
   return (
-    <Card>
+    <Card data-tour="settings-accounts">
       <CardHeader>
         <CardTitle className="text-base">Accounts</CardTitle>
         <CardDescription>

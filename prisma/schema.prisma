@@ -255,4 +255,6 @@ model AppSettings {
   weekStartsOn     Int    @default(0)
   /// Per-user dashboard section visibility: `{ "overview": true, "needThisMonth": false, ... }`
   dashboardWidgets Json?
+  /// Set true after the user finishes or skips the welcome tour (Driver.js).
+  completedAppTour Boolean @default(false)
 }

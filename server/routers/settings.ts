@@ -10,11 +10,26 @@ export const settingsRouter = router({
     });
     if (!row) {
       row = await ctx.prisma.appSettings.create({
-        data: { userId, currency: "PHP", weekStartsOn: 0 },
+        data: { userId, currency: "PHP", weekStartsOn: 0, completedAppTour: false },
       });
     }
     return row;
   }),
+
+  completeAppTour: protectedProcedure.mutation(async ({ ctx }) => {
+    const userId = ctx.session!.user!.id;
+    return ctx.prisma.appSettings.upsert({
+      where: { userId },
+      create: {
+        userId,
+        currency: "PHP",
+        weekStartsOn: 0,
+        completedAppTour: true,
+      },
+      update: { completedAppTour: true },
+    });
+  }),
+
   update: protectedProcedure
     .input(
       z.object({

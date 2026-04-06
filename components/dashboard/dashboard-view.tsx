@@ -145,7 +145,10 @@ export function DashboardView() {
 
   return (
     <div className="flex flex-col gap-8">
-      <section className="relative overflow-hidden rounded-2xl border border-border/80 bg-gradient-to-br from-primary/[0.07] via-background to-chart-2/[0.06] px-5 py-6 sm:px-8 sm:py-8">
+      <section
+        data-tour="dashboard-hero"
+        className="relative overflow-hidden rounded-2xl border border-border/80 bg-gradient-to-br from-primary/[0.07] via-background to-chart-2/[0.06] px-5 py-6 sm:px-8 sm:py-8"
+      >
         <div className="pointer-events-none absolute -right-16 -top-16 size-48 rounded-full bg-chart-2/10 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-20 -left-10 size-40 rounded-full bg-primary/10 blur-3xl" />
         <div className="relative flex flex-col gap-6">

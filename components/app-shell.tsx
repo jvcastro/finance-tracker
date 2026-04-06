@@ -1,5 +1,6 @@
 "use client"
 
+import * as React from "react"
 import {
   IconLayoutDashboard,
   IconSettings,
@@ -10,6 +11,8 @@ import {
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 
+import { AppLogo } from "@/components/app-logo"
+import { AppTour } from "@/components/app-tour"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { useCurrencyFormatter } from "@/hooks/use-currency-formatter"
 import { cn } from "@/lib/utils"
@@ -82,6 +85,7 @@ function MobileBottomNav() {
 
   return (
     <nav
+      data-tour="app-nav-mobile"
       className="fixed right-0 bottom-0 left-0 z-50 border-t border-border bg-background/95 supports-backdrop-filter:backdrop-blur-md md:hidden"
       style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
       aria-label="Main navigation"
@@ -119,11 +123,14 @@ function MobileBottomNav() {
 }
 
 function SidebarBrand() {
-  const fmt = useCurrencyFormatter()
   return (
     <div className="flex h-12 flex-col justify-center border-b border-sidebar-border px-3 py-1.5">
-      <Link href="/" className="leading-tight font-semibold tracking-tight">
-        Finance Tracker
+      <Link
+        href="/"
+        className="flex items-center gap-2.5 leading-tight font-semibold tracking-tight"
+      >
+        <AppLogo size={28} />
+        <span>Finance Tracker</span>
       </Link>
       {/* <p className="text-[0.625rem] font-medium text-muted-foreground tabular-nums">
         {fmt.symbol} {fmt.code}
@@ -144,7 +151,13 @@ function MobileCurrencyBadge() {
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-svh w-full">
-      <aside className="hidden w-52 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground md:flex">
+      <React.Suspense fallback={null}>
+        <AppTour />
+      </React.Suspense>
+      <aside
+        data-tour="app-nav-desktop"
+        className="hidden w-52 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground md:flex"
+      >
         <SidebarBrand />
         <ScrollArea className="flex-1 px-2 py-3">
           <NavLinks />

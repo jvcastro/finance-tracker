@@ -4,11 +4,11 @@ import { NextResponse } from "next/server"
 import { auth } from "@/auth"
 import {
   ATTACHMENT_MAX_BYTES,
-  attachmentExtensionForMime,
   isAllowedAttachmentMime,
 } from "@/lib/attachment"
 import { attachmentKeyPrefix, persistAttachment } from "@/lib/attachment-persist"
 import { prisma } from "@/lib/db"
+import { optimizeAttachmentBuffer } from "@/lib/optimize-attachment"
 import { deleteR2Object, putObjectBuffer } from "@/lib/r2"
 
 export const runtime = "nodejs"
@@ -53,11 +53,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "File is too large." }, { status: 400 })
   }
 
-  const ext = attachmentExtensionForMime(file.type)
-  if (!ext) {
-    return NextResponse.json({ error: "Invalid file type." }, { status: 400 })
-  }
-
   if (entity === "expense") {
     const row = await prisma.expense.findFirst({
       where: { id: recordIdRaw, userId },
@@ -74,20 +69,29 @@ export async function POST(req: Request) {
     }
   }
 
-  const key = `${attachmentKeyPrefix(userId, entity, recordIdRaw)}${randomUUID()}${ext}`
-  const buf = Buffer.from(await file.arrayBuffer())
+  const raw = Buffer.from(await file.arrayBuffer())
+  const optimized = await optimizeAttachmentBuffer(raw, file.type)
+
+  if (optimized.buffer.length > ATTACHMENT_MAX_BYTES) {
+    return NextResponse.json(
+      { error: "File is still too large after processing." },
+      { status: 400 }
+    )
+  }
+
+  const key = `${attachmentKeyPrefix(userId, entity, recordIdRaw)}${randomUUID()}${optimized.extension}`
 
   try {
     await putObjectBuffer({
       key,
-      contentType: file.type,
-      body: buf,
+      contentType: optimized.mimeType,
+      body: optimized.buffer,
     })
     await persistAttachment(prisma, userId, {
       entity,
       recordId: recordIdRaw,
       key,
-      mimeType: file.type,
+      mimeType: optimized.mimeType,
     })
   } catch (e) {
     await deleteR2Object(key)
