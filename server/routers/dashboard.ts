@@ -16,7 +16,6 @@ import {
   mergeDashboardWidgetPatch,
   parseDashboardWidgets,
 } from "@/lib/dashboard-widgets";
-import { CREDIT_CARD_TAG_NAME } from "@/lib/default-tags";
 import { ensureExpenseRecordsRollingWindow } from "@/lib/expense-ensure";
 import { ensureIncomeRecordsRollingWindow } from "@/lib/income-ensure";
 import { sumExpectedIncomeFromStreamsInMonth } from "@/lib/income-schedule";
@@ -66,6 +65,7 @@ const expenseWithTagSelect = {
   paid: true,
   tagId: true,
   tag: { select: { id: true, name: true, color: true } },
+  financialAccount: { select: { kind: true } },
 } satisfies Prisma.ExpenseSelect;
 
 const dashboardRecentIncomeSelect = {
@@ -163,23 +163,30 @@ function incomeReminderTitle(r: {
   return r.description?.trim() || "Income";
 }
 
-/** Sum of expenses with the default “Credit card” tag (not a second ledger). */
-function sumCreditCardTaggedExpensesInRange(
-  rows: Array<{ date: Date; amount: unknown; tag: { name: string } | null }>,
+/** Expenses whose linked account is a credit card (FinancialAccountKind.CREDIT_CARD). */
+function sumCreditCardAccountExpensesInRange(
+  rows: Array<{
+    date: Date;
+    amount: unknown;
+    financialAccount: { kind: string } | null;
+  }>,
   range: { start: Date; end: Date },
 ) {
   return rows.reduce((s, r) => {
-    if (r.tag?.name !== CREDIT_CARD_TAG_NAME) return s;
+    if (r.financialAccount?.kind !== "CREDIT_CARD") return s;
     if (!isWithinInterval(r.date, range)) return s;
     return s + Number(r.amount);
   }, 0);
 }
 
-function sumCreditCardTaggedExpensesAllTime(
-  rows: Array<{ amount: unknown; tag: { name: string } | null }>,
+function sumCreditCardAccountExpensesAllTime(
+  rows: Array<{
+    amount: unknown;
+    financialAccount: { kind: string } | null;
+  }>,
 ) {
   return rows.reduce((s, r) => {
-    if (r.tag?.name !== CREDIT_CARD_TAG_NAME) return s;
+    if (r.financialAccount?.kind !== "CREDIT_CARD") return s;
     return s + Number(r.amount);
   }, 0);
 }
@@ -214,7 +221,7 @@ export const dashboardRouter = router({
 
     const totalIncome = incomeRecords.reduce((s, i) => s + Number(i.amount), 0);
     const totalExpense = expenses.reduce((s, e) => s + Number(e.amount), 0);
-    const totalDebtPayments = sumCreditCardTaggedExpensesAllTime(expenses);
+    const totalCreditCardSpend = sumCreditCardAccountExpensesAllTime(expenses);
 
     const incomeThisMonth = recordsThisMonth.reduce(
       (s, i) => s + Number(i.amount),
@@ -234,7 +241,7 @@ export const dashboardRouter = router({
       if (e.paid) alreadyPaidExpenses += a;
       else stillToPayExpenses += a;
     }
-    const debtPaymentsThisMonth = sumCreditCardTaggedExpensesInRange(
+    const creditCardSpendThisMonth = sumCreditCardAccountExpensesInRange(
       expenses,
       { start: monthStart, end: monthEnd },
     );
@@ -340,7 +347,7 @@ export const dashboardRouter = router({
       label: string;
       income: number;
       expense: number;
-      debtPayments: number;
+      creditCardSpend: number;
     }> = [];
     for (let i = 5; i >= 0; i--) {
       const d = subMonths(now, i);
@@ -356,7 +363,7 @@ export const dashboardRouter = router({
         label: format(ms, "MMM yyyy"),
         income: incomeForMonth,
         expense: sumInMonth(expenses, ms, me),
-        debtPayments: sumCreditCardTaggedExpensesInRange(expenses, {
+        creditCardSpend: sumCreditCardAccountExpensesInRange(expenses, {
           start: ms,
           end: me,
         }),
@@ -496,13 +503,13 @@ export const dashboardRouter = router({
       totals: {
         totalIncome,
         totalExpense,
-        totalDebtPayments,
+        totalCreditCardSpend,
         netLifetime,
       },
       thisMonth: {
         income: incomeThisMonth,
         expense: expenseThisMonth,
-        debtPayments: debtPaymentsThisMonth,
+        creditCardSpend: creditCardSpendThisMonth,
         net: netThisMonth,
       },
       incomeBreakdownThisMonth: {

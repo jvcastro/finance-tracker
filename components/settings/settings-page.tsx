@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
+import { defaultDueDayFromStatementDay } from "@/lib/credit-card-due-day";
 import { isProtectedTagName } from "@/lib/default-tags";
 import { DEFAULT_CURRENCY, formatCurrency, getCurrencySymbol } from "@/lib/format";
 import {
@@ -59,11 +60,41 @@ const tagSchema = z
     }
   });
 
-const financialAccountSchema = z.object({
-  name: z.string().min(1).max(120),
-  kind: financialAccountKindSchema,
-  notes: z.string().max(500).optional(),
-});
+const financialAccountSchema = z
+  .object({
+    name: z.string().min(1).max(120),
+    kind: financialAccountKindSchema,
+    notes: z.string().max(500).optional(),
+    creditStatementDay: z.string().optional(),
+    creditDueDay: z.string().optional(),
+  })
+  .superRefine((data, ctx) => {
+    const check = (
+      raw: string | undefined,
+      path: "creditStatementDay" | "creditDueDay",
+    ) => {
+      if (!raw?.trim()) return;
+      const n = Number.parseInt(raw.trim(), 10);
+      if (Number.isNaN(n) || n < 1 || n > 31) {
+        ctx.addIssue({
+          code: "custom",
+          message: "Use a calendar day from 1 to 31.",
+          path: [path],
+        });
+      }
+    };
+    if (data.kind === "CREDIT_CARD") {
+      check(data.creditStatementDay, "creditStatementDay");
+      check(data.creditDueDay, "creditDueDay");
+    }
+  });
+
+function parseCreditDay(raw: string | undefined): number | null {
+  if (!raw?.trim()) return null;
+  const n = Number.parseInt(raw.trim(), 10);
+  if (Number.isNaN(n) || n < 1 || n > 31) return null;
+  return n;
+}
 
 export function SettingsPage() {
   const utils = trpc.useUtils();
@@ -305,7 +336,13 @@ function AccountsSection() {
 
   const addForm = useForm<z.infer<typeof financialAccountSchema>>({
     resolver: zodResolver(financialAccountSchema),
-    defaultValues: { name: "", kind: "CHECKING", notes: "" },
+    defaultValues: {
+      name: "",
+      kind: "CHECKING",
+      notes: "",
+      creditStatementDay: "",
+      creditDueDay: "",
+    },
   });
 
   const [editOpen, setEditOpen] = React.useState(false);
@@ -313,7 +350,13 @@ function AccountsSection() {
 
   const editForm = useForm<z.infer<typeof financialAccountSchema>>({
     resolver: zodResolver(financialAccountSchema),
-    defaultValues: { name: "", kind: "CHECKING", notes: "" },
+    defaultValues: {
+      name: "",
+      kind: "CHECKING",
+      notes: "",
+      creditStatementDay: "",
+      creditDueDay: "",
+    },
   });
 
   React.useEffect(() => {
@@ -324,6 +367,9 @@ function AccountsSection() {
         name: a.name,
         kind: a.kind as FinancialAccountKindValue,
         notes: a.notes ?? "",
+        creditStatementDay:
+          a.creditStatementDay != null ? String(a.creditStatementDay) : "",
+        creditDueDay: a.creditDueDay != null ? String(a.creditDueDay) : "",
       });
     }
   }, [editOpen, editingId, accounts, editForm]);
@@ -333,8 +379,18 @@ function AccountsSection() {
       name: values.name,
       kind: values.kind,
       notes: values.notes || undefined,
+      creditStatementDay:
+        values.kind === "CREDIT_CARD" ? parseCreditDay(values.creditStatementDay) : null,
+      creditDueDay:
+        values.kind === "CREDIT_CARD" ? parseCreditDay(values.creditDueDay) : null,
     });
-    addForm.reset({ name: "", kind: "CHECKING", notes: "" });
+    addForm.reset({
+      name: "",
+      kind: "CHECKING",
+      notes: "",
+      creditStatementDay: "",
+      creditDueDay: "",
+    });
   }
 
   function onEditSubmit(values: z.infer<typeof financialAccountSchema>) {
@@ -344,6 +400,10 @@ function AccountsSection() {
       name: values.name,
       kind: values.kind,
       notes: values.notes || null,
+      creditStatementDay:
+        values.kind === "CREDIT_CARD" ? parseCreditDay(values.creditStatementDay) : null,
+      creditDueDay:
+        values.kind === "CREDIT_CARD" ? parseCreditDay(values.creditDueDay) : null,
     });
     setEditOpen(false);
     setEditingId(null);
@@ -359,10 +419,8 @@ function AccountsSection() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <form
-          className="grid gap-3 sm:grid-cols-[1fr_1fr_1fr_auto]"
-          onSubmit={addForm.handleSubmit(onAddSubmit)}
-        >
+        <form className="space-y-3" onSubmit={addForm.handleSubmit(onAddSubmit)}>
+          <div className="grid gap-3 sm:grid-cols-[1fr_1fr_1fr_auto]">
           <div className="grid gap-2 sm:col-span-1">
             <Label htmlFor="fa-name">Name</Label>
             <Input
@@ -375,9 +433,14 @@ function AccountsSection() {
             <Label>Type</Label>
             <Select
               value={addForm.watch("kind")}
-              onValueChange={(v) =>
-                addForm.setValue("kind", v as FinancialAccountKindValue)
-              }
+              onValueChange={(v) => {
+                const nv = v as FinancialAccountKindValue;
+                if (nv !== "CREDIT_CARD") {
+                  addForm.setValue("creditStatementDay", "");
+                  addForm.setValue("creditDueDay", "");
+                }
+                addForm.setValue("kind", nv);
+              }}
             >
               <SelectTrigger>
                 <SelectValue />
@@ -405,6 +468,73 @@ function AccountsSection() {
               Add
             </Button>
           </div>
+          </div>
+
+        {addForm.watch("kind") === "CREDIT_CARD" ? (
+          <div className="space-y-2 rounded-lg border border-border/60 bg-muted/20 p-3">
+            <p className="text-muted-foreground text-xs">
+              Billing cycle (day of each month). Payment due day defaults to about 20 days after
+              the statement day; you can change it.
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-2">
+                <Label htmlFor="fa-stmt-day">Statement day</Label>
+                <Input
+                  id="fa-stmt-day"
+                  type="number"
+                  min={1}
+                  max={31}
+                  placeholder="e.g. 15"
+                  value={addForm.watch("creditStatementDay") ?? ""}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    addForm.setValue("creditStatementDay", v, {
+                      shouldDirty: true,
+                      shouldValidate: true,
+                    });
+                    if (v.trim() !== "") {
+                      const n = Number.parseInt(v, 10);
+                      if (!Number.isNaN(n) && n >= 1 && n <= 31) {
+                        addForm.setValue(
+                          "creditDueDay",
+                          String(defaultDueDayFromStatementDay(n)),
+                          { shouldDirty: true, shouldValidate: true },
+                        );
+                      }
+                    }
+                  }}
+                />
+                {addForm.formState.errors.creditStatementDay?.message ? (
+                  <p className="text-destructive text-xs">
+                    {addForm.formState.errors.creditStatementDay.message}
+                  </p>
+                ) : null}
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="fa-due-day">Payment due day</Label>
+                <Input
+                  id="fa-due-day"
+                  type="number"
+                  min={1}
+                  max={31}
+                  placeholder="e.g. 5"
+                  value={addForm.watch("creditDueDay") ?? ""}
+                  onChange={(e) =>
+                    addForm.setValue("creditDueDay", e.target.value, {
+                      shouldDirty: true,
+                      shouldValidate: true,
+                    })
+                  }
+                />
+                {addForm.formState.errors.creditDueDay?.message ? (
+                  <p className="text-destructive text-xs">
+                    {addForm.formState.errors.creditDueDay.message}
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        ) : null}
         </form>
 
         <Separator />
@@ -425,6 +555,19 @@ function AccountsSection() {
                       ({FINANCIAL_ACCOUNT_KIND_LABEL[a.kind as FinancialAccountKindValue]})
                     </span>
                   </p>
+                  {a.kind === "CREDIT_CARD" &&
+                  (a.creditStatementDay != null || a.creditDueDay != null) ? (
+                    <p className="text-muted-foreground text-xs">
+                      {[
+                        a.creditStatementDay != null
+                          ? `Statement day ${a.creditStatementDay}`
+                          : null,
+                        a.creditDueDay != null ? `Due day ${a.creditDueDay}` : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </p>
+                  ) : null}
                   {a.notes ? (
                     <p className="text-muted-foreground truncate text-xs">{a.notes}</p>
                   ) : null}
@@ -477,9 +620,14 @@ function AccountsSection() {
                 <Label>Type</Label>
                 <Select
                   value={editForm.watch("kind")}
-                  onValueChange={(v) =>
-                    editForm.setValue("kind", v as FinancialAccountKindValue)
-                  }
+                  onValueChange={(v) => {
+                    const nv = v as FinancialAccountKindValue;
+                    if (nv !== "CREDIT_CARD") {
+                      editForm.setValue("creditStatementDay", "");
+                      editForm.setValue("creditDueDay", "");
+                    }
+                    editForm.setValue("kind", nv);
+                  }}
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -497,6 +645,71 @@ function AccountsSection() {
                 <Label htmlFor="edit-fa-notes">Notes</Label>
                 <Textarea id="edit-fa-notes" rows={3} {...editForm.register("notes")} />
               </div>
+              {editForm.watch("kind") === "CREDIT_CARD" ? (
+                <div className="space-y-2 rounded-lg border border-border/60 bg-muted/20 p-3">
+                  <p className="text-muted-foreground text-xs">
+                    Billing cycle (day of each month). Payment due day defaults to about 20 days
+                    after the statement day; you can change it.
+                  </p>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="grid gap-2">
+                      <Label htmlFor="edit-fa-stmt-day">Statement day</Label>
+                      <Input
+                        id="edit-fa-stmt-day"
+                        type="number"
+                        min={1}
+                        max={31}
+                        placeholder="e.g. 15"
+                        value={editForm.watch("creditStatementDay") ?? ""}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          editForm.setValue("creditStatementDay", v, {
+                            shouldDirty: true,
+                            shouldValidate: true,
+                          });
+                          if (v.trim() !== "") {
+                            const n = Number.parseInt(v, 10);
+                            if (!Number.isNaN(n) && n >= 1 && n <= 31) {
+                              editForm.setValue(
+                                "creditDueDay",
+                                String(defaultDueDayFromStatementDay(n)),
+                                { shouldDirty: true, shouldValidate: true },
+                              );
+                            }
+                          }
+                        }}
+                      />
+                      {editForm.formState.errors.creditStatementDay?.message ? (
+                        <p className="text-destructive text-xs">
+                          {editForm.formState.errors.creditStatementDay.message}
+                        </p>
+                      ) : null}
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="edit-fa-due-day">Payment due day</Label>
+                      <Input
+                        id="edit-fa-due-day"
+                        type="number"
+                        min={1}
+                        max={31}
+                        placeholder="e.g. 5"
+                        value={editForm.watch("creditDueDay") ?? ""}
+                        onChange={(e) =>
+                          editForm.setValue("creditDueDay", e.target.value, {
+                            shouldDirty: true,
+                            shouldValidate: true,
+                          })
+                        }
+                      />
+                      {editForm.formState.errors.creditDueDay?.message ? (
+                        <p className="text-destructive text-xs">
+                          {editForm.formState.errors.creditDueDay.message}
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
               <DialogFooter>
                 <Button type="submit" disabled={updateAccount.isPending}>
                   Save

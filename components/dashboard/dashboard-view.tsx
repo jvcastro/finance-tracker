@@ -224,17 +224,23 @@ export function DashboardView() {
 
             <Card className="border-border/60 bg-card/80 shadow-sm backdrop-blur-sm transition-shadow hover:shadow-md">
               <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
-                <CardDescription>Credit card</CardDescription>
+                <CardDescription>Card spending</CardDescription>
                 <IconCreditCard className="text-muted-foreground size-5 shrink-0" aria-hidden />
               </CardHeader>
               <CardContent>
                 <p className="text-2xl font-semibold tabular-nums">
-                  {fmt(thisMonth.debtPayments)}
+                  {fmt(thisMonth.creditCardSpend)}
                 </p>
                 <p className="text-muted-foreground mt-2 text-xs">
-                  Expenses tagged with “Credit card” this month (subset of total
-                  expenses above).
+                  Spending on expenses tied to a credit card account from Settings—not
+                  the built-in &quot;Credit card&quot; tag.
                 </p>
+                {thisMonth.expense > 0 ? (
+                  <p className="text-muted-foreground mt-1 text-xs">
+                    {((thisMonth.creditCardSpend / thisMonth.expense) * 100).toFixed(0)}
+                    % of this month&apos;s expenses.
+                  </p>
+                ) : null}
               </CardContent>
             </Card>
           </div>
@@ -405,7 +411,7 @@ export function DashboardView() {
           <CardHeader>
             <CardTitle className="text-base">Six-month cash flow</CardTitle>
             <CardDescription>
-              Income, all expenses, and credit card–tagged expenses by month.
+              Income, all expenses, and spending on credit card accounts by month.
             </CardDescription>
           </CardHeader>
           <CardContent className="pt-0">
@@ -504,9 +510,9 @@ export function DashboardView() {
               </span>
             </div>
             <div className="flex justify-between gap-2 border-b border-border/60 pb-2">
-              <span className="text-muted-foreground">Credit card (tagged)</span>
+              <span className="text-muted-foreground">Credit card accounts</span>
               <span className="font-medium tabular-nums">
-                {fmt(totals.totalDebtPayments)}
+                {fmt(totals.totalCreditCardSpend)}
               </span>
             </div>
             <div className="flex justify-between gap-2 pt-1">

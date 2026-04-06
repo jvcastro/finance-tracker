@@ -1028,6 +1028,45 @@ function RecurringExpensesTab({
     }
   }, [editing, form, open])
 
+  const [durationYears, setDurationYears] = React.useState("")
+  const [durationMonths, setDurationMonths] = React.useState("")
+
+  React.useEffect(() => {
+    if (open) {
+      setDurationYears("")
+      setDurationMonths("")
+    }
+  }, [open])
+
+  function applyDurationToEndDate() {
+    const start = form.getValues("startDate")
+    if (!start?.trim()) {
+      toast.error("Set a start date first.")
+      return
+    }
+    const years = Math.max(0, Math.floor(Number.parseInt(durationYears, 10) || 0))
+    const months = Math.max(
+      0,
+      Math.floor(Number.parseInt(durationMonths, 10) || 0)
+    )
+    if (years === 0 && months === 0) {
+      toast.message("Enter at least one year or one month.")
+      return
+    }
+    const parts = start.split("-").map((x) => Number.parseInt(x, 10))
+    if (parts.length !== 3 || parts.some((n) => Number.isNaN(n))) {
+      toast.error("Invalid start date.")
+      return
+    }
+    const [sy, sm, sd] = parts
+    const startD = new Date(sy, sm - 1, sd)
+    const endD = addMonths(startD, years * 12 + months)
+    form.setValue("endDate", format(endD, "yyyy-MM-dd"), {
+      shouldValidate: true,
+      shouldDirty: true,
+    })
+  }
+
   function onSubmit(values: ExpenseStreamForm) {
     const payload = {
       amount: values.amount,
@@ -1332,6 +1371,51 @@ function RecurringExpensesTab({
             </div>
             <div className="grid gap-2">
               <Label htmlFor="es-end">End date (optional)</Label>
+              <div className="space-y-2 rounded-lg border border-border/80 bg-muted/30 p-3">
+                <p className="text-xs text-muted-foreground">
+                  Add years and/or months to the start date, then apply to fill the
+                  end date.
+                </p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <div className="grid gap-1">
+                    <Label htmlFor="es-dur-y" className="text-xs font-normal">
+                      Years
+                    </Label>
+                    <Input
+                      id="es-dur-y"
+                      type="number"
+                      min={0}
+                      max={100}
+                      placeholder="0"
+                      value={durationYears}
+                      onChange={(e) => setDurationYears(e.target.value)}
+                    />
+                  </div>
+                  <div className="grid gap-1">
+                    <Label htmlFor="es-dur-m" className="text-xs font-normal">
+                      Months
+                    </Label>
+                    <Input
+                      id="es-dur-m"
+                      type="number"
+                      min={0}
+                      max={1200}
+                      placeholder="0"
+                      value={durationMonths}
+                      onChange={(e) => setDurationMonths(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="w-full sm:w-auto"
+                  onClick={applyDurationToEndDate}
+                >
+                  Apply to end date
+                </Button>
+              </div>
               <Input id="es-end" type="date" {...form.register("endDate")} />
             </div>
             <div className="grid gap-2">

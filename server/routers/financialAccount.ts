@@ -18,16 +18,21 @@ export const financialAccountRouter = router({
         name: z.string().min(1).max(120),
         kind: financialAccountKindSchema,
         notes: z.string().max(500).optional(),
+        creditStatementDay: z.number().int().min(1).max(31).nullable().optional(),
+        creditDueDay: z.number().int().min(1).max(31).nullable().optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session!.user!.id;
+      const isCard = input.kind === "CREDIT_CARD";
       return ctx.prisma.financialAccount.create({
         data: {
           userId,
           name: input.name.trim(),
           kind: input.kind,
           notes: input.notes?.trim() || null,
+          creditStatementDay: isCard ? (input.creditStatementDay ?? null) : null,
+          creditDueDay: isCard ? (input.creditDueDay ?? null) : null,
         },
       });
     }),
@@ -38,6 +43,8 @@ export const financialAccountRouter = router({
         name: z.string().min(1).max(120),
         kind: financialAccountKindSchema,
         notes: z.string().max(500).optional().nullable(),
+        creditStatementDay: z.number().int().min(1).max(31).nullable().optional(),
+        creditDueDay: z.number().int().min(1).max(31).nullable().optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -48,12 +55,15 @@ export const financialAccountRouter = router({
       if (!row) {
         throw new TRPCError({ code: "NOT_FOUND" });
       }
+      const isCard = input.kind === "CREDIT_CARD";
       return ctx.prisma.financialAccount.update({
         where: { id: input.id },
         data: {
           name: input.name.trim(),
           kind: input.kind,
           notes: input.notes?.trim() || null,
+          creditStatementDay: isCard ? (input.creditStatementDay ?? null) : null,
+          creditDueDay: isCard ? (input.creditDueDay ?? null) : null,
         },
       });
     }),

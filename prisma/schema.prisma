@@ -94,6 +94,10 @@ model FinancialAccount {
   name           String
   kind           FinancialAccountKind
   notes          String?
+  /// Day of month (1–31) the billing statement closes. Only used when kind is CREDIT_CARD.
+  creditStatementDay Int?
+  /// Day of month (1–31) payment is due. Only used when kind is CREDIT_CARD.
+  creditDueDay       Int?
   createdAt      DateTime             @default(now())
   updatedAt      DateTime             @updatedAt
   expenseStreams ExpenseStream[]
@@ -249,10 +253,10 @@ model CreditCardDebt {
 }
 
 model AppSettings {
-  userId           String @id
-  user             User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  currency         String @default("PHP")
-  weekStartsOn     Int    @default(0)
+  userId           String  @id
+  user             User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  currency         String  @default("PHP")
+  weekStartsOn     Int     @default(0)
   /// Per-user dashboard section visibility: `{ "overview": true, "needThisMonth": false, ... }`
   dashboardWidgets Json?
   /// Set true after the user finishes or skips the welcome tour (Driver.js).

@@ -23,7 +23,7 @@ type TrendPoint = {
   label: string;
   income: number;
   expense: number;
-  debtPayments: number;
+  creditCardSpend: number;
 };
 
 type SourceKey = "SALARY" | "PROJECT" | "OTHER";
@@ -57,7 +57,7 @@ export function CashFlowTrendChart({
     <div
       className="h-[min(22rem,50vh)] w-full min-h-[220px]"
       role="img"
-      aria-label="Cash flow over the last six months: income, all expenses, and credit card–tagged expenses"
+      aria-label="Cash flow over the last six months: income, all expenses, and credit card account spending"
     >
       <ResponsiveContainer width="100%" height="100%">
         <BarChart
@@ -127,8 +127,8 @@ export function CashFlowTrendChart({
             maxBarSize={36}
           />
           <Bar
-            dataKey="debtPayments"
-            name="Credit card"
+            dataKey="creditCardSpend"
+            name="Card accounts"
             fill="var(--chart-5)"
             radius={[4, 4, 0, 0]}
             maxBarSize={36}
