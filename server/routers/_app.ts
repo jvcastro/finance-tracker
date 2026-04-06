@@ -7,6 +7,7 @@ import { expenseRouter } from "@/server/routers/expense";
 import { incomeRouter } from "@/server/routers/income";
 import { profileRouter } from "@/server/routers/profile";
 import { settingsRouter } from "@/server/routers/settings";
+import { storageRouter } from "@/server/routers/storage";
 import { tagRouter } from "@/server/routers/tag";
 
 export const appRouter = router({
@@ -19,6 +20,7 @@ export const appRouter = router({
   creditCardDebt: creditCardDebtRouter,
   settings: settingsRouter,
   profile: profileRouter,
+  storage: storageRouter,
 });
 
 export type AppRouter = typeof appRouter;

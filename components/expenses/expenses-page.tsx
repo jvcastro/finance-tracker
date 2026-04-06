@@ -1,7 +1,7 @@
-"use client";
+"use client"
 
-import * as React from "react";
-import { zodResolver } from "@/lib/zod-resolver";
+import * as React from "react"
+import { zodResolver } from "@/lib/zod-resolver"
 import {
   IconCalendarMonth,
   IconChevronLeft,
@@ -9,75 +9,72 @@ import {
   IconCircle,
   IconCircleCheck,
   IconDotsVertical,
+  IconEye,
+  IconPaperclip,
   IconPencil,
   IconPlus,
   IconTrash,
-} from "@tabler/icons-react";
-import { type ColumnDef } from "@tanstack/react-table";
-import { addMonths, format, parseISO, subMonths } from "date-fns";
-import { useForm } from "react-hook-form";
-import Link from "next/link";
-import { parseAsString, parseAsStringLiteral, useQueryState } from "nuqs";
-import { toast } from "sonner";
-import { z } from "zod";
+} from "@tabler/icons-react"
+import { type ColumnDef } from "@tanstack/react-table"
+import { addMonths, format, parseISO, subMonths } from "date-fns"
+import { useForm } from "react-hook-form"
+import Link from "next/link"
+import { parseAsString, parseAsStringLiteral, useQueryState } from "nuqs"
+import { toast } from "sonner"
+import { z } from "zod"
 
+import { DataTable, filterRowsByGlobalFilter } from "@/components/data-table"
+import { ResponsiveDetail } from "@/components/responsive-detail"
 import {
-  DataTable,
-  filterRowsByGlobalFilter,
-} from "@/components/data-table";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
+  TransactionAttachmentDetailPreview,
+  TransactionAttachmentFormBlock,
+  uploadTransactionAttachment,
+} from "@/components/transaction-attachment"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "@/components/ui/dialog"
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+} from "@/components/ui/dropdown-menu"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useCurrencyFormatter } from "@/hooks/use-currency-formatter";
-import { formatDate, formatIncomePeriod } from "@/lib/format";
+} from "@/components/ui/select"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { useCurrencyFormatter } from "@/hooks/use-currency-formatter"
+import { formatDate, formatIncomePeriod } from "@/lib/format"
 import {
   FINANCIAL_ACCOUNT_KIND_LABEL,
   type FinancialAccountKindValue,
-} from "@/lib/financial-account-kind";
-import { trpc } from "@/lib/trpc/react";
+} from "@/lib/financial-account-kind"
+import { trpc } from "@/lib/trpc/react"
 
 type FinancialAccountRef = {
-  id: string;
-  name: string;
-  kind: FinancialAccountKindValue;
-};
+  id: string
+  name: string
+  kind: FinancialAccountKindValue
+}
 
 const PAYMENT_METHOD_LABEL = {
   MANUAL: "Manual / other",
   BANK_AUTO_DEBIT: "Bank auto debit",
   CARD_AUTO_PAY: "Card auto-pay",
-} as const;
+} as const
 
 const expenseSchema = z.object({
   amount: z.coerce.number().positive(),
@@ -87,24 +84,26 @@ const expenseSchema = z.object({
   financialAccountId: z.string().optional(),
   paymentMethod: z.enum(["MANUAL", "BANK_AUTO_DEBIT", "CARD_AUTO_PAY"]),
   paid: z.boolean(),
-});
+})
 
-type ExpenseForm = z.infer<typeof expenseSchema>;
+type ExpenseForm = z.infer<typeof expenseSchema>
 
 type ExpenseRow = {
-  id: string;
-  amount: number;
-  date: Date;
-  description: string | null;
-  tagId: string | null;
-  tag: { id: string; name: string } | null;
-  financialAccountId: string | null;
-  financialAccount: FinancialAccountRef | null;
-  paymentMethod: keyof typeof PAYMENT_METHOD_LABEL;
-  expenseStreamId: string | null;
-  expenseStream: { id: string } | null;
-  paid: boolean;
-};
+  id: string
+  amount: number
+  date: Date
+  description: string | null
+  tagId: string | null
+  tag: { id: string; name: string } | null
+  financialAccountId: string | null
+  financialAccount: FinancialAccountRef | null
+  paymentMethod: keyof typeof PAYMENT_METHOD_LABEL
+  expenseStreamId: string | null
+  expenseStream: { id: string } | null
+  paid: boolean
+  attachmentKey: string | null
+  attachmentMime: string | null
+}
 
 const expenseStreamSchema = z
   .object({
@@ -120,108 +119,107 @@ const expenseStreamSchema = z
   })
   .superRefine((data, ctx) => {
     if (data.endDate?.trim()) {
-      const s = new Date(data.startDate);
-      const e = new Date(data.endDate);
+      const s = new Date(data.startDate)
+      const e = new Date(data.endDate)
       if (e < s) {
         ctx.addIssue({
           code: "custom",
           message: "End date must be on or after the start date.",
           path: ["endDate"],
-        });
+        })
       }
     }
-  });
+  })
 
-type ExpenseStreamForm = z.infer<typeof expenseStreamSchema>;
+type ExpenseStreamForm = z.infer<typeof expenseStreamSchema>
 
 type ExpenseStreamRow = {
-  id: string;
-  amount: number;
-  description: string | null;
-  tagId: string | null;
-  tag: { id: string; name: string } | null;
-  financialAccountId: string | null;
-  financialAccount: FinancialAccountRef | null;
-  paymentMethod: keyof typeof PAYMENT_METHOD_LABEL;
-  paymentDay: number;
-  startDate: Date;
-  endDate: Date | null;
-  isActive: boolean;
-};
+  id: string
+  amount: number
+  description: string | null
+  tagId: string | null
+  tag: { id: string; name: string } | null
+  financialAccountId: string | null
+  financialAccount: FinancialAccountRef | null
+  paymentMethod: keyof typeof PAYMENT_METHOD_LABEL
+  paymentDay: number
+  startDate: Date
+  endDate: Date | null
+  isActive: boolean
+}
 
 type TableFilterProps = {
-  tableFilter: string;
-  onTableFilterChange: (value: string) => void;
-};
+  tableFilter: string
+  onTableFilterChange: (value: string) => void
+}
 
 function ExpensesTab({ tableFilter, onTableFilterChange }: TableFilterProps) {
-  const fmt = useCurrencyFormatter();
-  const utils = trpc.useUtils();
+  const fmt = useCurrencyFormatter()
+  const utils = trpc.useUtils()
 
   const [monthStr, setMonthStr] = React.useState(() =>
-    format(new Date(), "yyyy-MM"),
-  );
+    format(new Date(), "yyyy-MM")
+  )
   const monthDate = React.useMemo(
     () => parseISO(`${monthStr}-01T12:00:00`),
-    [monthStr],
-  );
+    [monthStr]
+  )
 
   const { data: rows = [], isLoading } = trpc.expense.list.useQuery({
     month: monthDate,
-  });
-  const { data: tags = [] } = trpc.tag.list.useQuery();
-  const { data: accounts = [] } = trpc.financialAccount.list.useQuery();
+  })
+  const { data: tags = [] } = trpc.tag.list.useQuery()
+  const { data: accounts = [] } = trpc.financialAccount.list.useQuery()
 
   const createMut = trpc.expense.create.useMutation({
     onSuccess: () => {
-      void utils.expense.list.invalidate();
-      void utils.dashboard.summary.invalidate();
-      toast.success("Expense added.");
+      void utils.expense.list.invalidate()
+      void utils.dashboard.summary.invalidate()
     },
-    onError: (e) => toast.error(e.message),
-  });
+  })
   const updateMut = trpc.expense.update.useMutation({
     onSuccess: () => {
-      void utils.expense.list.invalidate();
-      void utils.dashboard.summary.invalidate();
-      toast.success("Expense updated.");
+      void utils.expense.list.invalidate()
+      void utils.dashboard.summary.invalidate()
     },
-    onError: (e) => toast.error(e.message),
-  });
+  })
   const deleteMut = trpc.expense.delete.useMutation({
     onSuccess: () => {
-      void utils.expense.list.invalidate();
-      void utils.dashboard.summary.invalidate();
-      toast.success("Expense deleted.");
+      void utils.expense.list.invalidate()
+      void utils.dashboard.summary.invalidate()
+      toast.success("Expense deleted.")
     },
     onError: (e) => toast.error(e.message),
-  });
+  })
 
   const setPaidMut = trpc.expense.setPaid.useMutation({
     onSuccess: () => {
-      void utils.expense.list.invalidate();
-      void utils.dashboard.summary.invalidate();
+      void utils.expense.list.invalidate()
+      void utils.dashboard.summary.invalidate()
     },
     onError: (e) => toast.error(e.message),
-  });
+  })
 
   const generateMut = trpc.expense.generateMonth.useMutation({
     onSuccess: () => {
-      void utils.expense.list.invalidate();
-      void utils.dashboard.summary.invalidate();
-      toast.success("Month synced.");
+      void utils.expense.list.invalidate()
+      void utils.dashboard.summary.invalidate()
+      toast.success("Month synced.")
     },
     onError: (e) => toast.error(e.message),
-  });
+  })
 
   const filteredExpenseRows = React.useMemo(
     () => filterRowsByGlobalFilter(rows as ExpenseRow[], tableFilter),
-    [rows, tableFilter],
-  );
+    [rows, tableFilter]
+  )
 
-  const [open, setOpen] = React.useState(false);
-  const [editing, setEditing] = React.useState<ExpenseRow | null>(null);
-  const [detailRow, setDetailRow] = React.useState<ExpenseRow | null>(null);
+  const [open, setOpen] = React.useState(false)
+  const [editing, setEditing] = React.useState<ExpenseRow | null>(null)
+  const [detailRow, setDetailRow] = React.useState<ExpenseRow | null>(null)
+  const [pendingAttachment, setPendingAttachment] = React.useState<File | null>(
+    null
+  )
 
   const form = useForm<ExpenseForm>({
     resolver: zodResolver(expenseSchema),
@@ -234,7 +232,7 @@ function ExpensesTab({ tableFilter, onTableFilterChange }: TableFilterProps) {
       paymentMethod: "MANUAL",
       paid: false,
     },
-  });
+  })
 
   React.useEffect(() => {
     if (editing) {
@@ -246,7 +244,7 @@ function ExpensesTab({ tableFilter, onTableFilterChange }: TableFilterProps) {
         financialAccountId: editing.financialAccountId ?? "",
         paymentMethod: editing.paymentMethod,
         paid: editing.paid,
-      });
+      })
     } else {
       form.reset({
         amount: 0,
@@ -256,11 +254,11 @@ function ExpensesTab({ tableFilter, onTableFilterChange }: TableFilterProps) {
         financialAccountId: "",
         paymentMethod: "MANUAL",
         paid: false,
-      });
+      })
     }
-  }, [editing, form, open]);
+  }, [editing, form, open])
 
-  function onSubmit(values: ExpenseForm) {
+  async function onSubmit(values: ExpenseForm) {
     const payload = {
       amount: values.amount,
       date: new Date(values.date),
@@ -269,14 +267,36 @@ function ExpensesTab({ tableFilter, onTableFilterChange }: TableFilterProps) {
       financialAccountId: values.financialAccountId || null,
       paymentMethod: values.paymentMethod,
       paid: values.paid,
-    };
-    if (editing) {
-      updateMut.mutate({ id: editing.id, ...payload });
-    } else {
-      createMut.mutate(payload);
     }
-    setOpen(false);
-    setEditing(null);
+    try {
+      if (editing) {
+        await updateMut.mutateAsync({ id: editing.id, ...payload })
+        if (pendingAttachment) {
+          await uploadTransactionAttachment(
+            "expense",
+            editing.id,
+            pendingAttachment
+          )
+        }
+      } else {
+        const created = await createMut.mutateAsync(payload)
+        if (pendingAttachment) {
+          await uploadTransactionAttachment(
+            "expense",
+            created.id,
+            pendingAttachment
+          )
+        }
+      }
+      void utils.expense.list.invalidate()
+      void utils.dashboard.summary.invalidate()
+      toast.success(editing ? "Expense updated." : "Expense added.")
+      setPendingAttachment(null)
+      setOpen(false)
+      setEditing(null)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Something went wrong.")
+    }
   }
 
   const columns: ColumnDef<ExpenseRow>[] = [
@@ -317,16 +337,16 @@ function ExpensesTab({ tableFilter, onTableFilterChange }: TableFilterProps) {
       header: "Account",
       meta: { className: "hidden md:table-cell min-w-[10rem]" },
       cell: ({ row }) => {
-        const fa = row.original.financialAccount;
-        if (!fa) return "—";
+        const fa = row.original.financialAccount
+        if (!fa) return "—"
         return (
           <span className="text-sm">
             <span>{fa.name}</span>
-            <span className="text-muted-foreground ml-1 text-xs">
+            <span className="ml-1 text-xs text-muted-foreground">
               ({FINANCIAL_ACCOUNT_KIND_LABEL[fa.kind]})
             </span>
           </span>
-        );
+        )
       },
     },
     {
@@ -355,16 +375,30 @@ function ExpensesTab({ tableFilter, onTableFilterChange }: TableFilterProps) {
     },
     {
       accessorKey: "amount",
-      header: () => (
-        <div className="text-right">
-          Amount ({fmt.symbol})
-        </div>
-      ),
+      header: () => <div className="text-right">Amount ({fmt.symbol})</div>,
       cell: ({ row }) => (
-        <div className="text-destructive text-right font-medium tabular-nums">
+        <div className="text-right font-medium text-destructive tabular-nums">
           {fmt(row.original.amount)}
         </div>
       ),
+    },
+    {
+      id: "attachment",
+      header: () => (
+        <span className="sr-only">Receipt</span>
+      ),
+      meta: { className: "w-9 px-0 text-center" },
+      cell: ({ row }) =>
+        row.original.attachmentKey ? (
+          <span title="Has receipt or invoice">
+            <IconPaperclip
+              className="mx-auto size-4 text-muted-foreground"
+              aria-hidden
+            />
+          </span>
+        ) : (
+          <span className="text-muted-foreground/25">—</span>
+        ),
     },
     {
       id: "actions",
@@ -381,11 +415,15 @@ function ExpensesTab({ tableFilter, onTableFilterChange }: TableFilterProps) {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => setDetailRow(row.original)}>
+              <IconEye className="size-4" />
+              View details
+            </DropdownMenuItem>
             <DropdownMenuItem
               disabled={setPaidMut.isPending}
               onClick={() => {
-                const r = row.original;
-                setPaidMut.mutate({ id: r.id, paid: !r.paid });
+                const r = row.original
+                setPaidMut.mutate({ id: r.id, paid: !r.paid })
               }}
             >
               {row.original.paid ? (
@@ -402,8 +440,8 @@ function ExpensesTab({ tableFilter, onTableFilterChange }: TableFilterProps) {
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => {
-                setEditing(row.original);
-                setOpen(true);
+                setEditing(row.original)
+                setOpen(true)
               }}
             >
               <IconPencil className="size-4" />
@@ -420,20 +458,22 @@ function ExpensesTab({ tableFilter, onTableFilterChange }: TableFilterProps) {
         </DropdownMenu>
       ),
     },
-  ];
+  ]
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-muted-foreground text-sm">
-          One-off and recurring expenses for the selected month. Tag card paydowns (for example{" "}
-          <span className="text-foreground">Credit card</span>) in the form. Set up repeating
-          charges on the <span className="text-foreground">Recurring</span> tab.
+        <p className="text-sm text-muted-foreground">
+          One-off and recurring expenses for the selected month. Tag card
+          paydowns (for example{" "}
+          <span className="text-foreground">Credit card</span>) in the form. Set
+          up repeating charges on the{" "}
+          <span className="text-foreground">Recurring</span> tab.
         </p>
         <Button
           onClick={() => {
-            setEditing(null);
-            setOpen(true);
+            setEditing(null)
+            setOpen(true)
           }}
         >
           <IconPlus className="size-4" />
@@ -448,13 +488,18 @@ function ExpensesTab({ tableFilter, onTableFilterChange }: TableFilterProps) {
             size="icon-sm"
             aria-label="Previous month"
             onClick={() =>
-              setMonthStr((m) => format(subMonths(parseISO(`${m}-01`), 1), "yyyy-MM"))
+              setMonthStr((m) =>
+                format(subMonths(parseISO(`${m}-01`), 1), "yyyy-MM")
+              )
             }
           >
             <IconChevronLeft className="size-4" />
           </Button>
           <div className="flex items-center gap-2">
-            <IconCalendarMonth className="text-muted-foreground size-4" aria-hidden />
+            <IconCalendarMonth
+              className="size-4 text-muted-foreground"
+              aria-hidden
+            />
             <Input
               type="month"
               className="w-[11rem]"
@@ -467,7 +512,9 @@ function ExpensesTab({ tableFilter, onTableFilterChange }: TableFilterProps) {
             size="icon-sm"
             aria-label="Next month"
             onClick={() =>
-              setMonthStr((m) => format(addMonths(parseISO(`${m}-01`), 1), "yyyy-MM"))
+              setMonthStr((m) =>
+                format(addMonths(parseISO(`${m}-01`), 1), "yyyy-MM")
+              )
             }
           >
             <IconChevronRight className="size-4" />
@@ -484,7 +531,7 @@ function ExpensesTab({ tableFilter, onTableFilterChange }: TableFilterProps) {
       </div>
 
       {isLoading ? (
-        <p className="text-muted-foreground text-sm">Loading…</p>
+        <p className="text-sm text-muted-foreground">Loading…</p>
       ) : (
         <>
           <Input
@@ -503,11 +550,12 @@ function ExpensesTab({ tableFilter, onTableFilterChange }: TableFilterProps) {
               globalFilter={tableFilter}
               onGlobalFilterChange={onTableFilterChange}
               hideFilterInput
+              onRowClick={(row) => setDetailRow(row)}
             />
           </div>
-          <div className="sm:hidden space-y-2">
+          <div className="space-y-2 sm:hidden">
             {filteredExpenseRows.length === 0 ? (
-              <div className="text-muted-foreground rounded-lg border border-border/80 bg-card px-4 py-8 text-center text-sm shadow-sm">
+              <div className="rounded-lg border border-border/80 bg-card px-4 py-8 text-center text-sm text-muted-foreground shadow-sm">
                 {Boolean(tableFilter.trim()) && rows.length > 0
                   ? "No rows match your filter."
                   : "No rows yet."}
@@ -520,15 +568,15 @@ function ExpensesTab({ tableFilter, onTableFilterChange }: TableFilterProps) {
                 >
                   <button
                     type="button"
-                    className="hover:bg-muted/50 active:bg-muted/70 min-w-0 flex-1 px-3 py-3 text-left text-sm transition-colors"
+                    className="min-w-0 flex-1 px-3 py-3 text-left text-sm transition-colors hover:bg-muted/50 active:bg-muted/70"
                     onClick={() => setDetailRow(row)}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0 flex-1">
-                        <p className="text-foreground line-clamp-2 font-medium leading-snug">
+                        <p className="line-clamp-2 leading-snug font-medium text-foreground">
                           {row.description?.trim() || "No description"}
                         </p>
-                        <p className="text-muted-foreground mt-1 flex flex-wrap items-center gap-2 text-xs">
+                        <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                           {row.paid ? (
                             <Badge variant="secondary" className="font-normal">
                               Paid
@@ -549,8 +597,17 @@ function ExpensesTab({ tableFilter, onTableFilterChange }: TableFilterProps) {
                           </span>
                         </p>
                       </div>
-                      <span className="text-destructive shrink-0 font-semibold tabular-nums">
-                        {fmt(row.amount)}
+                      <span className="flex shrink-0 items-start gap-1.5">
+                        {row.attachmentKey ? (
+                          <IconPaperclip
+                            className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+                            aria-hidden
+                            title="Has receipt or invoice"
+                          />
+                        ) : null}
+                        <span className="font-semibold text-destructive tabular-nums">
+                          {fmt(row.amount)}
+                        </span>
                       </span>
                     </div>
                   </button>
@@ -567,10 +624,14 @@ function ExpensesTab({ tableFilter, onTableFilterChange }: TableFilterProps) {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => setDetailRow(row)}>
+                        <IconEye className="size-4" />
+                        View details
+                      </DropdownMenuItem>
                       <DropdownMenuItem
                         disabled={setPaidMut.isPending}
                         onClick={() => {
-                          setPaidMut.mutate({ id: row.id, paid: !row.paid });
+                          setPaidMut.mutate({ id: row.id, paid: !row.paid })
                         }}
                       >
                         {row.paid ? (
@@ -587,8 +648,8 @@ function ExpensesTab({ tableFilter, onTableFilterChange }: TableFilterProps) {
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         onClick={() => {
-                          setEditing(row);
-                          setOpen(true);
+                          setEditing(row)
+                          setOpen(true)
                         }}
                       >
                         <IconPencil className="size-4" />
@@ -613,18 +674,29 @@ function ExpensesTab({ tableFilter, onTableFilterChange }: TableFilterProps) {
       <Dialog
         open={open}
         onOpenChange={(v) => {
-          setOpen(v);
-          if (!v) setEditing(null);
+          setOpen(v)
+          if (!v) {
+            setEditing(null)
+            setPendingAttachment(null)
+          }
         }}
       >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{editing ? "Edit expense" : "Add expense"}</DialogTitle>
+            <DialogTitle>
+              {editing ? "Edit expense" : "Add expense"}
+            </DialogTitle>
           </DialogHeader>
           <form className="grid gap-3" onSubmit={form.handleSubmit(onSubmit)}>
             <div className="grid gap-2">
               <Label htmlFor="e-amount">Amount ({fmt.symbol})</Label>
-              <Input id="e-amount" type="number" step="0.01" min="0" {...form.register("amount")} />
+              <Input
+                id="e-amount"
+                type="number"
+                step="0.01"
+                min="0"
+                {...form.register("amount")}
+              />
             </div>
             <div className="grid gap-2">
               <Label htmlFor="e-date">Date</Label>
@@ -675,8 +747,9 @@ function ExpensesTab({ tableFilter, onTableFilterChange }: TableFilterProps) {
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-muted-foreground text-xs">
-                Savings, checking, cards, e-wallets (e.g. GCash, Maya). Add accounts in{" "}
+              <p className="text-xs text-muted-foreground">
+                Savings, checking, cards, e-wallets (e.g. GCash, Maya). Add
+                accounts in{" "}
                 <Link href="/settings" className="underline underline-offset-2">
                   Settings
                 </Link>
@@ -690,7 +763,7 @@ function ExpensesTab({ tableFilter, onTableFilterChange }: TableFilterProps) {
                 onValueChange={(v) =>
                   form.setValue(
                     "paymentMethod",
-                    v as keyof typeof PAYMENT_METHOD_LABEL,
+                    v as keyof typeof PAYMENT_METHOD_LABEL
                   )
                 }
               >
@@ -698,9 +771,11 @@ function ExpensesTab({ tableFilter, onTableFilterChange }: TableFilterProps) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {(Object.keys(PAYMENT_METHOD_LABEL) as Array<
-                    keyof typeof PAYMENT_METHOD_LABEL
-                  >).map((k) => (
+                  {(
+                    Object.keys(PAYMENT_METHOD_LABEL) as Array<
+                      keyof typeof PAYMENT_METHOD_LABEL
+                    >
+                  ).map((k) => (
                     <SelectItem key={k} value={k}>
                       {PAYMENT_METHOD_LABEL[k]}
                     </SelectItem>
@@ -718,8 +793,27 @@ function ExpensesTab({ tableFilter, onTableFilterChange }: TableFilterProps) {
                 Paid
               </Label>
             </div>
+            <TransactionAttachmentFormBlock
+              entity="expense"
+              recordId={editing?.id ?? null}
+              attachmentKey={editing?.attachmentKey ?? null}
+              attachmentMime={editing?.attachmentMime ?? null}
+              pendingFile={pendingAttachment}
+              onPendingFileChange={setPendingAttachment}
+              onAttachmentRemoved={() =>
+                setEditing((e) =>
+                  e
+                    ? { ...e, attachmentKey: null, attachmentMime: null }
+                    : e
+                )
+              }
+              disabled={createMut.isPending || updateMut.isPending}
+            />
             <DialogFooter>
-              <Button type="submit" disabled={createMut.isPending || updateMut.isPending}>
+              <Button
+                type="submit"
+                disabled={createMut.isPending || updateMut.isPending}
+              >
                 Save
               </Button>
             </DialogFooter>
@@ -727,167 +821,167 @@ function ExpensesTab({ tableFilter, onTableFilterChange }: TableFilterProps) {
         </DialogContent>
       </Dialog>
 
-      <Sheet
+      <ResponsiveDetail
         open={detailRow != null}
         onOpenChange={(v) => {
-          if (!v) setDetailRow(null);
+          if (!v) setDetailRow(null)
         }}
-      >
-        <SheetContent
-          side="bottom"
-          className="max-h-[90vh] overflow-y-auto rounded-t-2xl px-0 sm:max-w-lg"
-        >
-          {detailRow ? (
-            <>
-              <SheetHeader className="px-6 pb-2 text-left">
-                <SheetTitle className="text-base leading-snug">
-                  {detailRow.description?.trim() || "Expense"}
-                </SheetTitle>
-                <SheetDescription className="sr-only">
-                  View expense details. Use Edit to change this expense.
-                </SheetDescription>
-              </SheetHeader>
-              <div className="text-foreground space-y-0 px-6 text-sm">
-                <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
-                  <span className="text-muted-foreground">Amount</span>
-                  <span className="text-destructive font-semibold tabular-nums">
-                    {fmt(detailRow.amount)}
-                  </span>
-                </div>
-                <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
-                  <span className="text-muted-foreground">Date</span>
-                  <span>{formatDate(detailRow.date)}</span>
-                </div>
-                <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
-                  <span className="text-muted-foreground">Kind</span>
-                  <span>
-                    {detailRow.expenseStreamId ? "Recurring" : "One-off"}
-                  </span>
-                </div>
-                <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
-                  <span className="text-muted-foreground">Tag</span>
-                  <span className="text-right">{detailRow.tag?.name ?? "—"}</span>
-                </div>
-                <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
-                  <span className="text-muted-foreground">Account</span>
-                  <span className="text-right">
-                    {detailRow.financialAccount
-                      ? `${detailRow.financialAccount.name} (${FINANCIAL_ACCOUNT_KIND_LABEL[detailRow.financialAccount.kind]})`
-                      : "—"}
-                  </span>
-                </div>
-                <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
-                  <span className="text-muted-foreground">How it pays</span>
-                  <span className="text-right">
-                    {PAYMENT_METHOD_LABEL[detailRow.paymentMethod]}
-                  </span>
-                </div>
-                <div className="flex justify-between gap-4 py-2.5">
-                  <span className="text-muted-foreground">Status</span>
-                  <span>{detailRow.paid ? "Paid" : "Pending"}</span>
-                </div>
-              </div>
-              <SheetFooter className="mt-auto grid grid-cols-2 gap-2 border-t border-border/80 p-6 pt-4">
-                <Button
-                  type="button"
-                  variant="default"
-                  className="min-w-0"
-                  disabled={setPaidMut.isPending}
-                  onClick={() => {
-                    const r = detailRow;
-                    if (!r) return;
-                    setPaidMut.mutate(
-                      { id: r.id, paid: !r.paid },
-                      {
-                        onSuccess: () => {
-                          setDetailRow((d) =>
-                            d && d.id === r.id ? { ...d, paid: !d.paid } : d,
-                          );
-                        },
+        title={detailRow?.description?.trim() || "Expense"}
+        description="View expense details. Use Edit to change this expense."
+        footer={
+          detailRow ? (
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                type="button"
+                variant="default"
+                className="min-w-0"
+                disabled={setPaidMut.isPending}
+                onClick={() => {
+                  const r = detailRow
+                  if (!r) return
+                  setPaidMut.mutate(
+                    { id: r.id, paid: !r.paid },
+                    {
+                      onSuccess: () => {
+                        setDetailRow((d) =>
+                          d && d.id === r.id ? { ...d, paid: !d.paid } : d
+                        )
                       },
-                    );
-                  }}
-                >
-                  {detailRow.paid ? (
-                    <>
-                      <IconCircle className="size-4" />
-                      Mark as pending
-                    </>
-                  ) : (
-                    <>
-                      <IconCircleCheck className="size-4" />
-                      Mark as paid
-                    </>
-                  )}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="min-w-0"
-                  onClick={() => {
-                    const r = detailRow;
-                    setDetailRow(null);
-                    setEditing(r);
-                    setOpen(true);
-                  }}
-                >
-                  <IconPencil className="size-4" />
-                  Edit
-                </Button>
-              </SheetFooter>
-            </>
-          ) : null}
-        </SheetContent>
-      </Sheet>
+                    }
+                  )
+                }}
+              >
+                {detailRow.paid ? (
+                  <>
+                    <IconCircle className="size-4" />
+                    Mark as pending
+                  </>
+                ) : (
+                  <>
+                    <IconCircleCheck className="size-4" />
+                    Mark as paid
+                  </>
+                )}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="min-w-0"
+                onClick={() => {
+                  const r = detailRow
+                  setDetailRow(null)
+                  setEditing(r)
+                  setOpen(true)
+                }}
+              >
+                <IconPencil className="size-4" />
+                Edit
+              </Button>
+            </div>
+          ) : null
+        }
+      >
+        {detailRow ? (
+          <div className="space-y-0 text-sm text-foreground">
+            <TransactionAttachmentDetailPreview
+              entity="expense"
+              recordId={detailRow.id}
+              hasAttachment={Boolean(detailRow.attachmentKey)}
+            />
+            <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
+              <span className="text-muted-foreground">Amount</span>
+              <span className="font-semibold text-destructive tabular-nums">
+                {fmt(detailRow.amount)}
+              </span>
+            </div>
+            <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
+              <span className="text-muted-foreground">Date</span>
+              <span>{formatDate(detailRow.date)}</span>
+            </div>
+            <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
+              <span className="text-muted-foreground">Kind</span>
+              <span>
+                {detailRow.expenseStreamId ? "Recurring" : "One-off"}
+              </span>
+            </div>
+            <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
+              <span className="text-muted-foreground">Tag</span>
+              <span className="text-right">
+                {detailRow.tag?.name ?? "—"}
+              </span>
+            </div>
+            <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
+              <span className="text-muted-foreground">Account</span>
+              <span className="text-right">
+                {detailRow.financialAccount
+                  ? `${detailRow.financialAccount.name} (${FINANCIAL_ACCOUNT_KIND_LABEL[detailRow.financialAccount.kind]})`
+                  : "—"}
+              </span>
+            </div>
+            <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
+              <span className="text-muted-foreground">How it pays</span>
+              <span className="text-right">
+                {PAYMENT_METHOD_LABEL[detailRow.paymentMethod]}
+              </span>
+            </div>
+            <div className="flex justify-between gap-4 py-2.5">
+              <span className="text-muted-foreground">Status</span>
+              <span>{detailRow.paid ? "Paid" : "Pending"}</span>
+            </div>
+          </div>
+        ) : null}
+      </ResponsiveDetail>
     </div>
-  );
+  )
 }
 
-function RecurringExpensesTab({ tableFilter, onTableFilterChange }: TableFilterProps) {
-  const fmt = useCurrencyFormatter();
-  const utils = trpc.useUtils();
-  const { data: rows = [], isLoading } = trpc.expense.stream.list.useQuery();
-  const { data: tags = [] } = trpc.tag.list.useQuery();
-  const { data: accounts = [] } = trpc.financialAccount.list.useQuery();
+function RecurringExpensesTab({
+  tableFilter,
+  onTableFilterChange,
+}: TableFilterProps) {
+  const fmt = useCurrencyFormatter()
+  const utils = trpc.useUtils()
+  const { data: rows = [], isLoading } = trpc.expense.stream.list.useQuery()
+  const { data: tags = [] } = trpc.tag.list.useQuery()
+  const { data: accounts = [] } = trpc.financialAccount.list.useQuery()
 
   const createMut = trpc.expense.stream.create.useMutation({
     onSuccess: () => {
-      void utils.expense.stream.list.invalidate();
-      void utils.expense.list.invalidate();
-      void utils.dashboard.summary.invalidate();
-      toast.success("Recurring expense saved.");
+      void utils.expense.stream.list.invalidate()
+      void utils.expense.list.invalidate()
+      void utils.dashboard.summary.invalidate()
+      toast.success("Recurring expense saved.")
     },
     onError: (e) => toast.error(e.message),
-  });
+  })
   const updateMut = trpc.expense.stream.update.useMutation({
     onSuccess: () => {
-      void utils.expense.stream.list.invalidate();
-      void utils.expense.list.invalidate();
-      void utils.dashboard.summary.invalidate();
-      toast.success("Recurring expense updated.");
+      void utils.expense.stream.list.invalidate()
+      void utils.expense.list.invalidate()
+      void utils.dashboard.summary.invalidate()
+      toast.success("Recurring expense updated.")
     },
     onError: (e) => toast.error(e.message),
-  });
+  })
   const deleteMut = trpc.expense.stream.delete.useMutation({
     onSuccess: () => {
-      void utils.expense.stream.list.invalidate();
-      void utils.expense.list.invalidate();
-      void utils.dashboard.summary.invalidate();
-      toast.success("Recurring expense deleted.");
+      void utils.expense.stream.list.invalidate()
+      void utils.expense.list.invalidate()
+      void utils.dashboard.summary.invalidate()
+      toast.success("Recurring expense deleted.")
     },
     onError: (e) => toast.error(e.message),
-  });
+  })
 
   const filteredStreamRows = React.useMemo(
     () => filterRowsByGlobalFilter(rows as ExpenseStreamRow[], tableFilter),
-    [rows, tableFilter],
-  );
+    [rows, tableFilter]
+  )
 
-  const [open, setOpen] = React.useState(false);
-  const [editing, setEditing] = React.useState<ExpenseStreamRow | null>(null);
-  const [detailStream, setDetailStream] = React.useState<ExpenseStreamRow | null>(
-    null,
-  );
+  const [open, setOpen] = React.useState(false)
+  const [editing, setEditing] = React.useState<ExpenseStreamRow | null>(null)
+  const [detailStream, setDetailStream] =
+    React.useState<ExpenseStreamRow | null>(null)
 
   const form = useForm<ExpenseStreamForm>({
     resolver: zodResolver(expenseStreamSchema),
@@ -902,7 +996,7 @@ function RecurringExpensesTab({ tableFilter, onTableFilterChange }: TableFilterP
       endDate: "",
       isActive: true,
     },
-  });
+  })
 
   React.useEffect(() => {
     if (editing) {
@@ -918,7 +1012,7 @@ function RecurringExpensesTab({ tableFilter, onTableFilterChange }: TableFilterP
           ? new Date(editing.endDate).toISOString().slice(0, 10)
           : "",
         isActive: editing.isActive,
-      });
+      })
     } else {
       form.reset({
         amount: 0,
@@ -930,9 +1024,9 @@ function RecurringExpensesTab({ tableFilter, onTableFilterChange }: TableFilterP
         startDate: new Date().toISOString().slice(0, 10),
         endDate: "",
         isActive: true,
-      });
+      })
     }
-  }, [editing, form, open]);
+  }, [editing, form, open])
 
   function onSubmit(values: ExpenseStreamForm) {
     const payload = {
@@ -945,14 +1039,14 @@ function RecurringExpensesTab({ tableFilter, onTableFilterChange }: TableFilterP
       startDate: new Date(values.startDate),
       endDate: values.endDate?.trim() ? new Date(values.endDate) : null,
       isActive: values.isActive,
-    };
-    if (editing) {
-      updateMut.mutate({ id: editing.id, ...payload });
-    } else {
-      createMut.mutate(payload);
     }
-    setOpen(false);
-    setEditing(null);
+    if (editing) {
+      updateMut.mutate({ id: editing.id, ...payload })
+    } else {
+      createMut.mutate(payload)
+    }
+    setOpen(false)
+    setEditing(null)
   }
 
   const columns: ColumnDef<ExpenseStreamRow>[] = [
@@ -985,16 +1079,16 @@ function RecurringExpensesTab({ tableFilter, onTableFilterChange }: TableFilterP
       header: "Account",
       meta: { className: "hidden md:table-cell min-w-[10rem]" },
       cell: ({ row }) => {
-        const fa = row.original.financialAccount;
-        if (!fa) return "—";
+        const fa = row.original.financialAccount
+        if (!fa) return "—"
         return (
           <span className="text-sm">
             <span>{fa.name}</span>
-            <span className="text-muted-foreground ml-1 text-xs">
+            <span className="ml-1 text-xs text-muted-foreground">
               ({FINANCIAL_ACCOUNT_KIND_LABEL[fa.kind]})
             </span>
           </span>
-        );
+        )
       },
     },
     {
@@ -1005,13 +1099,9 @@ function RecurringExpensesTab({ tableFilter, onTableFilterChange }: TableFilterP
     },
     {
       accessorKey: "amount",
-      header: () => (
-        <div className="text-right">
-          Amount ({fmt.symbol})
-        </div>
-      ),
+      header: () => <div className="text-right">Amount ({fmt.symbol})</div>,
       cell: ({ row }) => (
-        <div className="text-destructive text-right font-medium tabular-nums">
+        <div className="text-right font-medium text-destructive tabular-nums">
           {fmt(row.original.amount)}
         </div>
       ),
@@ -1046,10 +1136,14 @@ function RecurringExpensesTab({ tableFilter, onTableFilterChange }: TableFilterP
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => setDetailStream(row.original)}>
+              <IconEye className="size-4" />
+              View details
+            </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => {
-                setEditing(row.original);
-                setOpen(true);
+                setEditing(row.original)
+                setOpen(true)
               }}
             >
               <IconPencil className="size-4" />
@@ -1066,21 +1160,23 @@ function RecurringExpensesTab({ tableFilter, onTableFilterChange }: TableFilterP
         </DropdownMenu>
       ),
     },
-  ];
+  ]
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-muted-foreground text-sm">
-          Expected monthly charges (rent, subscriptions, card paydowns, and similar). Tag items such
-          as <span className="text-foreground">Credit card</span> when relevant. One row per month
-          appears on <span className="text-foreground">Regular</span> when you open or sync that
-          month.
+        <p className="text-sm text-muted-foreground">
+          Expected monthly charges (rent, subscriptions, card paydowns, and
+          similar). Tag items such as{" "}
+          <span className="text-foreground">Credit card</span> when relevant.
+          One row per month appears on{" "}
+          <span className="text-foreground">Regular</span> when you open or sync
+          that month.
         </p>
         <Button
           onClick={() => {
-            setEditing(null);
-            setOpen(true);
+            setEditing(null)
+            setOpen(true)
           }}
         >
           <IconPlus className="size-4" />
@@ -1089,7 +1185,7 @@ function RecurringExpensesTab({ tableFilter, onTableFilterChange }: TableFilterP
       </div>
 
       {isLoading ? (
-        <p className="text-muted-foreground text-sm">Loading…</p>
+        <p className="text-sm text-muted-foreground">Loading…</p>
       ) : (
         <>
           <Input
@@ -1108,11 +1204,12 @@ function RecurringExpensesTab({ tableFilter, onTableFilterChange }: TableFilterP
               globalFilter={tableFilter}
               onGlobalFilterChange={onTableFilterChange}
               hideFilterInput
+              onRowClick={(row) => setDetailStream(row)}
             />
           </div>
-          <div className="sm:hidden space-y-2">
+          <div className="space-y-2 sm:hidden">
             {filteredStreamRows.length === 0 ? (
-              <div className="text-muted-foreground rounded-lg border border-border/80 bg-card px-4 py-8 text-center text-sm shadow-sm">
+              <div className="rounded-lg border border-border/80 bg-card px-4 py-8 text-center text-sm text-muted-foreground shadow-sm">
                 {Boolean(tableFilter.trim()) && rows.length > 0
                   ? "No rows match your filter."
                   : "No rows yet."}
@@ -1125,15 +1222,15 @@ function RecurringExpensesTab({ tableFilter, onTableFilterChange }: TableFilterP
                 >
                   <button
                     type="button"
-                    className="hover:bg-muted/50 active:bg-muted/70 min-w-0 flex-1 px-3 py-3 text-left text-sm transition-colors"
+                    className="min-w-0 flex-1 px-3 py-3 text-left text-sm transition-colors hover:bg-muted/50 active:bg-muted/70"
                     onClick={() => setDetailStream(row)}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0 flex-1">
-                        <p className="text-foreground line-clamp-2 font-medium leading-snug">
+                        <p className="line-clamp-2 leading-snug font-medium text-foreground">
                           {row.description?.trim() || "Recurring expense"}
                         </p>
-                        <p className="text-muted-foreground mt-1 text-xs">
+                        <p className="mt-1 text-xs text-muted-foreground">
                           Day {row.paymentDay}
                           {" · "}
                           {formatIncomePeriod(row.startDate, row.endDate)}
@@ -1142,7 +1239,7 @@ function RecurringExpensesTab({ tableFilter, onTableFilterChange }: TableFilterP
                             : ""}
                         </p>
                       </div>
-                      <span className="text-destructive shrink-0 font-semibold tabular-nums">
+                      <span className="shrink-0 font-semibold text-destructive tabular-nums">
                         {fmt(row.amount)}
                       </span>
                     </div>
@@ -1160,10 +1257,14 @@ function RecurringExpensesTab({ tableFilter, onTableFilterChange }: TableFilterP
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => setDetailStream(row)}>
+                        <IconEye className="size-4" />
+                        View details
+                      </DropdownMenuItem>
                       <DropdownMenuItem
                         onClick={() => {
-                          setEditing(row);
-                          setOpen(true);
+                          setEditing(row)
+                          setOpen(true)
                         }}
                       >
                         <IconPencil className="size-4" />
@@ -1188,8 +1289,8 @@ function RecurringExpensesTab({ tableFilter, onTableFilterChange }: TableFilterP
       <Dialog
         open={open}
         onOpenChange={(v) => {
-          setOpen(v);
-          if (!v) setEditing(null);
+          setOpen(v)
+          if (!v) setEditing(null)
         }}
       >
         <DialogContent className="sm:max-w-md">
@@ -1223,7 +1324,11 @@ function RecurringExpensesTab({ tableFilter, onTableFilterChange }: TableFilterP
             </div>
             <div className="grid gap-2">
               <Label htmlFor="es-start">Start date</Label>
-              <Input id="es-start" type="date" {...form.register("startDate")} />
+              <Input
+                id="es-start"
+                type="date"
+                {...form.register("startDate")}
+              />
             </div>
             <div className="grid gap-2">
               <Label htmlFor="es-end">End date (optional)</Label>
@@ -1274,7 +1379,7 @@ function RecurringExpensesTab({ tableFilter, onTableFilterChange }: TableFilterP
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-muted-foreground text-xs">
+              <p className="text-xs text-muted-foreground">
                 Add or manage accounts in{" "}
                 <Link href="/settings" className="underline underline-offset-2">
                   Settings
@@ -1289,7 +1394,7 @@ function RecurringExpensesTab({ tableFilter, onTableFilterChange }: TableFilterP
                 onValueChange={(v) =>
                   form.setValue(
                     "paymentMethod",
-                    v as keyof typeof PAYMENT_METHOD_LABEL,
+                    v as keyof typeof PAYMENT_METHOD_LABEL
                   )
                 }
               >
@@ -1297,9 +1402,11 @@ function RecurringExpensesTab({ tableFilter, onTableFilterChange }: TableFilterP
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {(Object.keys(PAYMENT_METHOD_LABEL) as Array<
-                    keyof typeof PAYMENT_METHOD_LABEL
-                  >).map((k) => (
+                  {(
+                    Object.keys(PAYMENT_METHOD_LABEL) as Array<
+                      keyof typeof PAYMENT_METHOD_LABEL
+                    >
+                  ).map((k) => (
                     <SelectItem key={k} value={k}>
                       {PAYMENT_METHOD_LABEL[k]}
                     </SelectItem>
@@ -1318,7 +1425,10 @@ function RecurringExpensesTab({ tableFilter, onTableFilterChange }: TableFilterP
               </Label>
             </div>
             <DialogFooter>
-              <Button type="submit" disabled={createMut.isPending || updateMut.isPending}>
+              <Button
+                type="submit"
+                disabled={createMut.isPending || updateMut.isPending}
+              >
                 Save
               </Button>
             </DialogFooter>
@@ -1326,114 +1436,108 @@ function RecurringExpensesTab({ tableFilter, onTableFilterChange }: TableFilterP
         </DialogContent>
       </Dialog>
 
-      <Sheet
+      <ResponsiveDetail
         open={detailStream != null}
         onOpenChange={(v) => {
-          if (!v) setDetailStream(null);
+          if (!v) setDetailStream(null)
         }}
+        title={detailStream?.description?.trim() || "Recurring expense"}
+        description="View recurring expense details. Use Edit to change this template."
+        footer={
+          detailStream ? (
+            <Button
+              className="w-full"
+              onClick={() => {
+                const r = detailStream
+                setDetailStream(null)
+                setEditing(r)
+                setOpen(true)
+              }}
+            >
+              <IconPencil className="size-4" />
+              Edit
+            </Button>
+          ) : null
+        }
       >
-        <SheetContent
-          side="bottom"
-          className="max-h-[90vh] overflow-y-auto rounded-t-2xl px-0 sm:max-w-lg"
-        >
-          {detailStream ? (
-            <>
-              <SheetHeader className="px-6 pb-2 text-left">
-                <SheetTitle className="text-base leading-snug">
-                  {detailStream.description?.trim() || "Recurring expense"}
-                </SheetTitle>
-                <SheetDescription className="sr-only">
-                  View recurring expense details. Use Edit to change this template.
-                </SheetDescription>
-              </SheetHeader>
-              <div className="text-foreground space-y-0 px-6 text-sm">
-                <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
-                  <span className="text-muted-foreground">Amount / month</span>
-                  <span className="text-destructive font-semibold tabular-nums">
-                    {fmt(detailStream.amount)}
-                  </span>
-                </div>
-                <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
-                  <span className="text-muted-foreground">Day of month</span>
-                  <span>{detailStream.paymentDay}</span>
-                </div>
-                <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
-                  <span className="text-muted-foreground">Active period</span>
-                  <span className="text-right">
-                    {formatIncomePeriod(detailStream.startDate, detailStream.endDate)}
-                  </span>
-                </div>
-                <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
-                  <span className="text-muted-foreground">Tag</span>
-                  <span className="text-right">{detailStream.tag?.name ?? "—"}</span>
-                </div>
-                <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
-                  <span className="text-muted-foreground">Account</span>
-                  <span className="text-right">
-                    {detailStream.financialAccount
-                      ? `${detailStream.financialAccount.name} (${FINANCIAL_ACCOUNT_KIND_LABEL[detailStream.financialAccount.kind]})`
-                      : "—"}
-                  </span>
-                </div>
-                <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
-                  <span className="text-muted-foreground">How it pays</span>
-                  <span className="text-right">
-                    {PAYMENT_METHOD_LABEL[detailStream.paymentMethod]}
-                  </span>
-                </div>
-                <div className="flex justify-between gap-4 py-2.5">
-                  <span className="text-muted-foreground">Active</span>
-                  <span>{detailStream.isActive ? "Yes" : "Off"}</span>
-                </div>
-              </div>
-              <SheetFooter className="border-t border-border/80 sm:flex-col">
-                <Button
-                  className="w-full"
-                  onClick={() => {
-                    const r = detailStream;
-                    setDetailStream(null);
-                    setEditing(r);
-                    setOpen(true);
-                  }}
-                >
-                  <IconPencil className="size-4" />
-                  Edit
-                </Button>
-              </SheetFooter>
-            </>
-          ) : null}
-        </SheetContent>
-      </Sheet>
+        {detailStream ? (
+          <div className="space-y-0 text-sm text-foreground">
+            <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
+              <span className="text-muted-foreground">Amount / month</span>
+              <span className="font-semibold text-destructive tabular-nums">
+                {fmt(detailStream.amount)}
+              </span>
+            </div>
+            <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
+              <span className="text-muted-foreground">Day of month</span>
+              <span>{detailStream.paymentDay}</span>
+            </div>
+            <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
+              <span className="text-muted-foreground">Active period</span>
+              <span className="text-right">
+                {formatIncomePeriod(
+                  detailStream.startDate,
+                  detailStream.endDate
+                )}
+              </span>
+            </div>
+            <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
+              <span className="text-muted-foreground">Tag</span>
+              <span className="text-right">
+                {detailStream.tag?.name ?? "—"}
+              </span>
+            </div>
+            <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
+              <span className="text-muted-foreground">Account</span>
+              <span className="text-right">
+                {detailStream.financialAccount
+                  ? `${detailStream.financialAccount.name} (${FINANCIAL_ACCOUNT_KIND_LABEL[detailStream.financialAccount.kind]})`
+                  : "—"}
+              </span>
+            </div>
+            <div className="flex justify-between gap-4 border-b border-border/60 py-2.5">
+              <span className="text-muted-foreground">How it pays</span>
+              <span className="text-right">
+                {PAYMENT_METHOD_LABEL[detailStream.paymentMethod]}
+              </span>
+            </div>
+            <div className="flex justify-between gap-4 py-2.5">
+              <span className="text-muted-foreground">Active</span>
+              <span>{detailStream.isActive ? "Yes" : "Off"}</span>
+            </div>
+          </div>
+        ) : null}
+      </ResponsiveDetail>
     </div>
-  );
+  )
 }
 
-const expenseTabValues = ["regular", "recurring"] as const;
+const expenseTabValues = ["regular", "recurring"] as const
 
 export function ExpensesPage() {
   const [tab, setTab] = useQueryState(
     "tab",
-    parseAsStringLiteral(expenseTabValues).withDefault("regular"),
-  );
+    parseAsStringLiteral(expenseTabValues).withDefault("regular")
+  )
   const [q, setQ] = useQueryState(
     "q",
-    parseAsString.withDefault("").withOptions({ throttleMs: 300 }),
-  );
+    parseAsString.withDefault("").withOptions({ throttleMs: 300 })
+  )
 
   return (
     <div className="flex flex-col gap-4">
       <div>
         <h1 className="text-lg font-semibold tracking-tight">Expenses</h1>
-        <p className="text-muted-foreground text-sm">
-          Track one-off and recurring spending. Use a tag (for example, Credit card) to group card
-          paydowns.
+        <p className="text-sm text-muted-foreground">
+          Track one-off and recurring spending. Use a tag (for example, Credit
+          card) to group card paydowns.
         </p>
       </div>
 
       <Tabs
         value={tab}
         onValueChange={(v) => {
-          void setTab(v as (typeof expenseTabValues)[number]);
+          void setTab(v as (typeof expenseTabValues)[number])
         }}
         className="w-full"
       >
@@ -1449,5 +1553,5 @@ export function ExpensesPage() {
         </TabsContent>
       </Tabs>
     </div>
-  );
+  )
 }

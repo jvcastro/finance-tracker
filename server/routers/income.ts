@@ -1,17 +1,18 @@
-import { TRPCError } from "@trpc/server";
-import { endOfMonth, startOfMonth } from "date-fns";
-import { z } from "zod";
+import { TRPCError } from "@trpc/server"
+import { endOfMonth, startOfMonth } from "date-fns"
+import { z } from "zod"
 
-import { Prisma, type PrismaClient } from "@/generated/prisma/client";
-import { atNoonLocal } from "@/lib/income-schedule";
+import { Prisma, type PrismaClient } from "@/generated/prisma/client"
+import { deleteR2Object } from "@/lib/r2"
+import { atNoonLocal } from "@/lib/income-schedule"
 import {
   ensureIncomeRecordsForMonth,
   ensureIncomeRecordsRollingWindow,
-} from "@/lib/income-ensure";
-import { router, protectedProcedure } from "@/server/trpc";
+} from "@/lib/income-ensure"
+import { router, protectedProcedure } from "@/server/trpc"
 
-const incomeSourceTypeSchema = z.enum(["SALARY", "PROJECT", "OTHER"]);
-const salaryPayScheduleSchema = z.enum(["MONTHLY", "BI_WEEKLY", "ONE_OFF"]);
+const incomeSourceTypeSchema = z.enum(["SALARY", "PROJECT", "OTHER"])
+const salaryPayScheduleSchema = z.enum(["MONTHLY", "BI_WEEKLY", "ONE_OFF"])
 
 const streamFields = z.object({
   amount: z.number().positive(),
@@ -26,19 +27,19 @@ const streamFields = z.object({
   tagId: z.string().optional().nullable(),
   financialAccountId: z.string().optional().nullable(),
   isActive: z.boolean().optional(),
-});
+})
 
 function streamRefine(
   data: z.infer<typeof streamFields>,
-  ctx: z.RefinementCtx,
+  ctx: z.RefinementCtx
 ) {
-  const end = data.endDate ?? null;
+  const end = data.endDate ?? null
   if (end != null && end < data.startDate) {
     ctx.addIssue({
       code: "custom",
       message: "End date must be on or after the start date.",
       path: ["endDate"],
-    });
+    })
   }
   if (data.sourceType === "SALARY" && data.salaryPaySchedule == null) {
     ctx.addIssue({
@@ -46,14 +47,14 @@ function streamRefine(
       message:
         "Select how often your employer pays you (monthly, bi-weekly, or one-off).",
       path: ["salaryPaySchedule"],
-    });
+    })
   }
   if (data.sourceType !== "SALARY" && data.salaryPaySchedule != null) {
     ctx.addIssue({
       code: "custom",
       message: "Pay schedule applies only to salary.",
       path: ["salaryPaySchedule"],
-    });
+    })
   }
   if (
     data.sourceType === "SALARY" &&
@@ -62,9 +63,10 @@ function streamRefine(
   ) {
     ctx.addIssue({
       code: "custom",
-      message: "Biweekly pay needs a second day of the month (for example, 30).",
+      message:
+        "Biweekly pay needs a second day of the month (for example, 30).",
       path: ["secondPaymentDay"],
-    });
+    })
   }
   if (
     data.sourceType === "SALARY" &&
@@ -74,16 +76,17 @@ function streamRefine(
   ) {
     ctx.addIssue({
       code: "custom",
-      message: "Use two different days for each payment (for example, 15 and 30).",
+      message:
+        "Use two different days for each payment (for example, 15 and 30).",
       path: ["secondPaymentDay"],
-    });
+    })
   }
 }
 
-const streamCreateInput = streamFields.superRefine(streamRefine);
+const streamCreateInput = streamFields.superRefine(streamRefine)
 const streamUpdateInput = streamFields
   .extend({ id: z.string() })
-  .superRefine(streamRefine);
+  .superRefine(streamRefine)
 
 const manualCreateInput = z
   .object({
@@ -103,16 +106,16 @@ const manualCreateInput = z
         code: "custom",
         message: "Select pay schedule for salary.",
         path: ["salaryPaySchedule"],
-      });
+      })
     }
     if (data.sourceType !== "SALARY" && data.salaryPaySchedule != null) {
       ctx.addIssue({
         code: "custom",
         message: "Pay schedule applies only to salary.",
         path: ["salaryPaySchedule"],
-      });
+      })
     }
-  });
+  })
 
 const recordUpdateInput = z.object({
   id: z.string(),
@@ -121,33 +124,33 @@ const recordUpdateInput = z.object({
   description: z.string().max(500).optional().nullable(),
   tagId: z.string().optional().nullable(),
   financialAccountId: z.string().optional().nullable(),
-});
+})
 
 async function assertTag(
   prisma: PrismaClient,
   userId: string,
-  tagId: string | null | undefined,
+  tagId: string | null | undefined
 ) {
-  if (!tagId) return;
+  if (!tagId) return
   const tag = await prisma.tag.findFirst({
     where: { id: tagId, userId },
-  });
+  })
   if (!tag) {
-    throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid tag." });
+    throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid tag." })
   }
 }
 
 async function assertFinancialAccount(
   prisma: PrismaClient,
   userId: string,
-  financialAccountId: string | null | undefined,
+  financialAccountId: string | null | undefined
 ) {
-  if (!financialAccountId) return;
+  if (!financialAccountId) return
   const fa = await prisma.financialAccount.findFirst({
     where: { id: financialAccountId, userId },
-  });
+  })
   if (!fa) {
-    throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid account." });
+    throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid account." })
   }
 }
 
@@ -170,7 +173,7 @@ const incomeStreamWithRelationsSelect = {
   updatedAt: true,
   tag: { select: { id: true, name: true } },
   financialAccount: { select: { id: true, name: true, kind: true } },
-} satisfies Prisma.IncomeStreamSelect;
+} satisfies Prisma.IncomeStreamSelect
 
 const incomeRecordWithRelationsSelect = {
   id: true,
@@ -185,6 +188,8 @@ const incomeRecordWithRelationsSelect = {
   sourceType: true,
   sourceName: true,
   salaryPaySchedule: true,
+  attachmentKey: true,
+  attachmentMime: true,
   createdAt: true,
   tag: { select: { id: true, name: true } },
   financialAccount: { select: { id: true, name: true, kind: true } },
@@ -195,28 +200,32 @@ const incomeRecordWithRelationsSelect = {
       salaryPaySchedule: true,
     },
   },
-} satisfies Prisma.IncomeSelect;
+} satisfies Prisma.IncomeSelect
 
 export const incomeRouter = router({
   stream: router({
     list: protectedProcedure.query(async ({ ctx }) => {
-      const userId = ctx.session!.user!.id;
+      const userId = ctx.session!.user!.id
       const rows = await ctx.prisma.incomeStream.findMany({
         where: { userId },
         orderBy: { startDate: "desc" },
         select: incomeStreamWithRelationsSelect,
-      });
+      })
       return rows.map((r) => ({
         ...r,
         amount: Number(r.amount),
-      }));
+      }))
     }),
     create: protectedProcedure
       .input(streamCreateInput)
       .mutation(async ({ ctx, input }) => {
-        const userId = ctx.session!.user!.id;
-        await assertTag(ctx.prisma, userId, input.tagId);
-        await assertFinancialAccount(ctx.prisma, userId, input.financialAccountId);
+        const userId = ctx.session!.user!.id
+        await assertTag(ctx.prisma, userId, input.tagId)
+        await assertFinancialAccount(
+          ctx.prisma,
+          userId,
+          input.financialAccountId
+        )
         const row = await ctx.prisma.incomeStream.create({
           data: {
             userId,
@@ -229,7 +238,7 @@ export const incomeRouter = router({
             secondPaymentDay:
               input.sourceType === "SALARY" &&
               input.salaryPaySchedule === "BI_WEEKLY"
-                ? input.secondPaymentDay ?? null
+                ? (input.secondPaymentDay ?? null)
                 : null,
             startDate: input.startDate,
             endDate: input.endDate ?? null,
@@ -239,22 +248,26 @@ export const incomeRouter = router({
             isActive: input.isActive ?? true,
           },
           select: incomeStreamWithRelationsSelect,
-        });
-        await ensureIncomeRecordsRollingWindow(ctx.prisma, userId);
-        return { ...row, amount: Number(row.amount) };
+        })
+        await ensureIncomeRecordsRollingWindow(ctx.prisma, userId)
+        return { ...row, amount: Number(row.amount) }
       }),
     update: protectedProcedure
       .input(streamUpdateInput)
       .mutation(async ({ ctx, input }) => {
-        const userId = ctx.session!.user!.id;
+        const userId = ctx.session!.user!.id
         const existing = await ctx.prisma.incomeStream.findFirst({
           where: { id: input.id, userId },
-        });
+        })
         if (!existing) {
-          throw new TRPCError({ code: "NOT_FOUND" });
+          throw new TRPCError({ code: "NOT_FOUND" })
         }
-        await assertTag(ctx.prisma, userId, input.tagId);
-        await assertFinancialAccount(ctx.prisma, userId, input.financialAccountId);
+        await assertTag(ctx.prisma, userId, input.tagId)
+        await assertFinancialAccount(
+          ctx.prisma,
+          userId,
+          input.financialAccountId
+        )
         const row = await ctx.prisma.incomeStream.update({
           where: { id: input.id },
           data: {
@@ -267,7 +280,7 @@ export const incomeRouter = router({
             secondPaymentDay:
               input.sourceType === "SALARY" &&
               input.salaryPaySchedule === "BI_WEEKLY"
-                ? input.secondPaymentDay ?? null
+                ? (input.secondPaymentDay ?? null)
                 : null,
             startDate: input.startDate,
             endDate: input.endDate ?? null,
@@ -277,21 +290,21 @@ export const incomeRouter = router({
             isActive: input.isActive ?? true,
           },
           select: incomeStreamWithRelationsSelect,
-        });
-        await ensureIncomeRecordsRollingWindow(ctx.prisma, userId);
-        return { ...row, amount: Number(row.amount) };
+        })
+        await ensureIncomeRecordsRollingWindow(ctx.prisma, userId)
+        return { ...row, amount: Number(row.amount) }
       }),
     delete: protectedProcedure
       .input(z.object({ id: z.string() }))
       .mutation(async ({ ctx, input }) => {
-        const userId = ctx.session!.user!.id;
+        const userId = ctx.session!.user!.id
         const existing = await ctx.prisma.incomeStream.findFirst({
           where: { id: input.id, userId },
-        });
+        })
         if (!existing) {
-          throw new TRPCError({ code: "NOT_FOUND" });
+          throw new TRPCError({ code: "NOT_FOUND" })
         }
-        await ctx.prisma.incomeStream.delete({ where: { id: input.id } });
+        await ctx.prisma.incomeStream.delete({ where: { id: input.id } })
       }),
   }),
 
@@ -302,16 +315,16 @@ export const incomeRouter = router({
           .object({
             month: z.coerce.date().optional(),
           })
-          .optional(),
+          .optional()
       )
       .query(async ({ ctx, input }) => {
-        const userId = ctx.session!.user!.id;
-        const month = input?.month ?? new Date();
-        const monthStart = startOfMonth(month);
-        await ensureIncomeRecordsRollingWindow(ctx.prisma, userId);
-        await ensureIncomeRecordsForMonth(ctx.prisma, userId, month);
+        const userId = ctx.session!.user!.id
+        const month = input?.month ?? new Date()
+        const monthStart = startOfMonth(month)
+        await ensureIncomeRecordsRollingWindow(ctx.prisma, userId)
+        await ensureIncomeRecordsForMonth(ctx.prisma, userId, month)
 
-        const monthEnd = endOfMonth(monthStart);
+        const monthEnd = endOfMonth(monthStart)
         const rows = await ctx.prisma.income.findMany({
           where: {
             userId,
@@ -319,39 +332,43 @@ export const incomeRouter = router({
           },
           orderBy: [{ scheduledDate: "asc" }, { received: "asc" }],
           select: incomeRecordWithRelationsSelect,
-        });
+        })
         return rows.map((r) => ({
           ...r,
           amount: Number(r.amount),
-        }));
+        }))
       }),
 
     generateMonth: protectedProcedure
       .input(z.object({ month: z.coerce.date() }))
       .mutation(async ({ ctx, input }) => {
-        const userId = ctx.session!.user!.id;
-        await ensureIncomeRecordsForMonth(ctx.prisma, userId, input.month);
+        const userId = ctx.session!.user!.id
+        await ensureIncomeRecordsForMonth(ctx.prisma, userId, input.month)
       }),
 
     createManual: protectedProcedure
       .input(manualCreateInput)
       .mutation(async ({ ctx, input }) => {
-        const userId = ctx.session!.user!.id;
-        await assertTag(ctx.prisma, userId, input.tagId);
-        await assertFinancialAccount(ctx.prisma, userId, input.financialAccountId);
-        const scheduledDate = atNoonLocal(input.scheduledDate);
+        const userId = ctx.session!.user!.id
+        await assertTag(ctx.prisma, userId, input.tagId)
+        await assertFinancialAccount(
+          ctx.prisma,
+          userId,
+          input.financialAccountId
+        )
+        const scheduledDate = atNoonLocal(input.scheduledDate)
         const existingManual = await ctx.prisma.income.findFirst({
           where: {
             userId,
             incomeStreamId: null,
             scheduledDate,
           },
-        });
+        })
         if (existingManual) {
           throw new TRPCError({
             code: "CONFLICT",
             message: "You already have a manual payment on this date.",
-          });
+          })
         }
         const row = await ctx.prisma.income.create({
           data: {
@@ -369,22 +386,26 @@ export const incomeRouter = router({
               input.sourceType === "SALARY" ? input.salaryPaySchedule : null,
           },
           select: incomeRecordWithRelationsSelect,
-        });
-        return { ...row, amount: Number(row.amount) };
+        })
+        return { ...row, amount: Number(row.amount) }
       }),
 
     update: protectedProcedure
       .input(recordUpdateInput)
       .mutation(async ({ ctx, input }) => {
-        const userId = ctx.session!.user!.id;
+        const userId = ctx.session!.user!.id
         const existing = await ctx.prisma.income.findFirst({
           where: { id: input.id, userId },
-        });
+        })
         if (!existing) {
-          throw new TRPCError({ code: "NOT_FOUND" });
+          throw new TRPCError({ code: "NOT_FOUND" })
         }
-        await assertTag(ctx.prisma, userId, input.tagId);
-        await assertFinancialAccount(ctx.prisma, userId, input.financialAccountId);
+        await assertTag(ctx.prisma, userId, input.tagId)
+        await assertFinancialAccount(
+          ctx.prisma,
+          userId,
+          input.financialAccountId
+        )
         const row = await ctx.prisma.income.update({
           where: { id: input.id },
           data: {
@@ -397,21 +418,24 @@ export const incomeRouter = router({
               : {}),
           },
           select: incomeRecordWithRelationsSelect,
-        });
-        return { ...row, amount: Number(row.amount) };
+        })
+        return { ...row, amount: Number(row.amount) }
       }),
 
     delete: protectedProcedure
       .input(z.object({ id: z.string() }))
       .mutation(async ({ ctx, input }) => {
-        const userId = ctx.session!.user!.id;
+        const userId = ctx.session!.user!.id
         const existing = await ctx.prisma.income.findFirst({
           where: { id: input.id, userId },
-        });
+        })
         if (!existing) {
-          throw new TRPCError({ code: "NOT_FOUND" });
+          throw new TRPCError({ code: "NOT_FOUND" })
         }
-        await ctx.prisma.income.delete({ where: { id: input.id } });
+        if (existing.attachmentKey) {
+          await deleteR2Object(existing.attachmentKey)
+        }
+        await ctx.prisma.income.delete({ where: { id: input.id } })
       }),
   }),
-});
+})

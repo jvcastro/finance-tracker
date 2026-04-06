@@ -18,14 +18,14 @@ model User {
   accounts Account[]
   sessions Session[]
 
-  tags               Tag[]
-  financialAccounts  FinancialAccount[]
-  incomeStreams   IncomeStream[]
-  expenseStreams  ExpenseStream[]
-  incomes         Income[]
-  expenses        Expense[]
-  creditCardDebts CreditCardDebt[]
-  appSettings     AppSettings?
+  tags              Tag[]
+  financialAccounts FinancialAccount[]
+  incomeStreams     IncomeStream[]
+  expenseStreams    ExpenseStream[]
+  incomes           Income[]
+  expenses          Expense[]
+  creditCardDebts   CreditCardDebt[]
+  appSettings       AppSettings?
 }
 
 model Account {
@@ -64,12 +64,12 @@ model VerificationToken {
 }
 
 model Tag {
-  id        String    @id @default(cuid())
-  userId    String
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  name      String
-  color     String?
-  createdAt DateTime  @default(now())
+  id             String          @id @default(cuid())
+  userId         String
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name           String
+  color          String?
+  createdAt      DateTime        @default(now())
   incomes        Income[]
   incomeStreams  IncomeStream[]
   expenseStreams ExpenseStream[]
@@ -88,14 +88,14 @@ enum FinancialAccountKind {
 }
 
 model FinancialAccount {
-  id        String               @id @default(cuid())
-  userId    String
-  user      User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
-  name      String
-  kind      FinancialAccountKind
-  notes     String?
-  createdAt DateTime             @default(now())
-  updatedAt DateTime             @updatedAt
+  id             String               @id @default(cuid())
+  userId         String
+  user           User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name           String
+  kind           FinancialAccountKind
+  notes          String?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
   expenseStreams ExpenseStream[]
   expenses       Expense[]
   incomeStreams  IncomeStream[]
@@ -120,58 +120,61 @@ enum SalaryPaySchedule {
 
 /// Your income source definition (amount, schedule, dates). Does not create ledger rows by itself.
 model IncomeStream {
-  id                String             @id @default(cuid())
-  userId            String
-  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                 String             @id @default(cuid())
+  userId             String
+  user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   /// Per payment: monthly salary = one month gross; bi-weekly = one paycheck; project/other = usually monthly.
-  amount            Decimal
-  sourceType        IncomeSourceType
-  sourceName        String?
-  salaryPaySchedule SalaryPaySchedule?
+  amount             Decimal
+  sourceType         IncomeSourceType
+  sourceName         String?
+  salaryPaySchedule  SalaryPaySchedule?
   /// Day of month pay lands (1–31); Feb etc. clamp to last day. Not derived from start date.
-  paymentDay        Int              @default(15)
+  paymentDay         Int                @default(15)
   /// Second pay day in the month (e.g. 30); required for bi-weekly salary (e.g. 15 & 30).
-  secondPaymentDay  Int?
-  startDate         DateTime
-  endDate           DateTime?
-  description       String?
-  tagId             String?
-  tag               Tag?               @relation(fields: [tagId], references: [id], onDelete: SetNull)
+  secondPaymentDay   Int?
+  startDate          DateTime
+  endDate            DateTime?
+  description        String?
+  tagId              String?
+  tag                Tag?               @relation(fields: [tagId], references: [id], onDelete: SetNull)
   financialAccountId String?
-  financialAccount   FinancialAccount? @relation(fields: [financialAccountId], references: [id], onDelete: SetNull)
-  isActive          Boolean            @default(true)
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime           @updatedAt
-  incomes           Income[]
+  financialAccount   FinancialAccount?  @relation(fields: [financialAccountId], references: [id], onDelete: SetNull)
+  isActive           Boolean            @default(true)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  incomes            Income[]
 
   @@index([userId])
 }
 
 /// One expected or actual payment: generated from a stream’s pay schedule, or entered manually.
 model Income {
-  id             String        @id @default(cuid())
-  userId         String
-  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  incomeStreamId String?
-  incomeStream   IncomeStream? @relation(fields: [incomeStreamId], references: [id], onDelete: Cascade)
+  id                 String             @id @default(cuid())
+  userId             String
+  user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  incomeStreamId     String?
+  incomeStream       IncomeStream?      @relation(fields: [incomeStreamId], references: [id], onDelete: Cascade)
   /// Calendar date this payment is for (payday).
-  scheduledDate  DateTime
-  amount         Decimal
-  received       Boolean       @default(false)
-  description    String?
-  tagId          String?
-  tag            Tag?          @relation(fields: [tagId], references: [id], onDelete: SetNull)
+  scheduledDate      DateTime
+  amount             Decimal
+  received           Boolean            @default(false)
+  description        String?
+  tagId              String?
+  tag                Tag?               @relation(fields: [tagId], references: [id], onDelete: SetNull)
   financialAccountId String?
-  financialAccount   FinancialAccount? @relation(fields: [financialAccountId], references: [id], onDelete: SetNull)
+  financialAccount   FinancialAccount?  @relation(fields: [financialAccountId], references: [id], onDelete: SetNull)
   /// Only when incomeStreamId is null (manual entry).
-  sourceType        IncomeSourceType?
-  sourceName        String?
-  salaryPaySchedule SalaryPaySchedule?
-  createdAt         DateTime      @default(now())
+  sourceType         IncomeSourceType?
+  sourceName         String?
+  salaryPaySchedule  SalaryPaySchedule?
+  /// R2 object key for receipt/invoice (image or PDF).
+  attachmentKey      String?
+  attachmentMime     String?
+  createdAt          DateTime           @default(now())
 
+  @@unique([incomeStreamId, scheduledDate])
   @@index([userId])
   @@index([scheduledDate])
-  @@unique([incomeStreamId, scheduledDate])
 }
 
 /// How this expense is typically settled (for your own reference).
@@ -183,51 +186,54 @@ enum ExpensePaymentMethod {
 
 /// Monthly recurring expense template (amount, day of month, optional end date).
 model ExpenseStream {
-  id          String    @id @default(cuid())
-  userId      String
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  amount      Decimal
-  description String?
-  tagId       String?
-  tag         Tag?      @relation(fields: [tagId], references: [id], onDelete: SetNull)
+  id                 String               @id @default(cuid())
+  userId             String
+  user               User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount             Decimal
+  description        String?
+  tagId              String?
+  tag                Tag?                 @relation(fields: [tagId], references: [id], onDelete: SetNull)
   financialAccountId String?
-  financialAccount   FinancialAccount? @relation(fields: [financialAccountId], references: [id], onDelete: SetNull)
+  financialAccount   FinancialAccount?    @relation(fields: [financialAccountId], references: [id], onDelete: SetNull)
   /// e.g. ACH debit vs card autopay vs you pay manually.
-  paymentMethod ExpensePaymentMethod @default(MANUAL)
+  paymentMethod      ExpensePaymentMethod @default(MANUAL)
   /// Day of month the charge occurs (1–31; clamped to last day in month).
-  paymentDay  Int       @default(1)
-  startDate   DateTime
-  endDate     DateTime?
-  isActive    Boolean   @default(true)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  expenses    Expense[]
+  paymentDay         Int                  @default(1)
+  startDate          DateTime
+  endDate            DateTime?
+  isActive           Boolean              @default(true)
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  expenses           Expense[]
 
   @@index([userId])
 }
 
 model Expense {
-  id          String   @id @default(cuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  amount      Decimal
-  date        DateTime
-  description String?
-  tagId       String?
-  tag         Tag?     @relation(fields: [tagId], references: [id], onDelete: SetNull)
-  expenseStreamId String?
-  expenseStream   ExpenseStream? @relation(fields: [expenseStreamId], references: [id], onDelete: Cascade)
+  id                 String               @id @default(cuid())
+  userId             String
+  user               User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount             Decimal
+  date               DateTime
+  description        String?
+  tagId              String?
+  tag                Tag?                 @relation(fields: [tagId], references: [id], onDelete: SetNull)
+  expenseStreamId    String?
+  expenseStream      ExpenseStream?       @relation(fields: [expenseStreamId], references: [id], onDelete: Cascade)
   financialAccountId String?
-  financialAccount   FinancialAccount? @relation(fields: [financialAccountId], references: [id], onDelete: SetNull)
+  financialAccount   FinancialAccount?    @relation(fields: [financialAccountId], references: [id], onDelete: SetNull)
   /// Mirrors recurring template when generated from a stream.
-  paymentMethod ExpensePaymentMethod @default(MANUAL)
+  paymentMethod      ExpensePaymentMethod @default(MANUAL)
   /// User marked this charge as paid (e.g. settled the card / bill).
-  paid        Boolean  @default(false)
-  createdAt   DateTime @default(now())
+  paid               Boolean              @default(false)
+  /// R2 object key for receipt/invoice (image or PDF).
+  attachmentKey      String?
+  attachmentMime     String?
+  createdAt          DateTime             @default(now())
 
+  @@unique([expenseStreamId, date])
   @@index([userId])
   @@index([date])
-  @@unique([expenseStreamId, date])
 }
 
 model CreditCardDebt {
@@ -243,10 +249,10 @@ model CreditCardDebt {
 }
 
 model AppSettings {
-  userId       String @id
-  user         User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  currency     String @default("PHP")
-  weekStartsOn Int    @default(0)
+  userId           String @id
+  user             User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  currency         String @default("PHP")
+  weekStartsOn     Int    @default(0)
   /// Per-user dashboard section visibility: `{ "overview": true, "needThisMonth": false, ... }`
   dashboardWidgets Json?
 }

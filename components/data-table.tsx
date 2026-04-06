@@ -18,6 +18,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 
 /** Same logic as the table’s global filter — use for alternate mobile layouts. */
 export function filterRowsByGlobalFilter<T>(data: T[], filterValue: string): T[] {
@@ -58,6 +59,8 @@ interface DataTableProps<TData, TValue> {
   filterPlaceholder?: string;
   /** When true, filtering still applies but the search input is not rendered (e.g. shared input elsewhere). */
   hideFilterInput?: boolean;
+  /** When set, clicking a row opens detail (use `id: "actions"` on the actions column so clicks there do not bubble). */
+  onRowClick?: (row: TData) => void;
 }
 
 export function DataTable<TData, TValue>({
@@ -70,6 +73,7 @@ export function DataTable<TData, TValue>({
   onGlobalFilterChange,
   filterPlaceholder = "Search…",
   hideFilterInput = false,
+  onRowClick,
 }: DataTableProps<TData, TValue>) {
   const filterEnabled =
     globalFilter !== undefined && onGlobalFilterChange !== undefined;
@@ -127,11 +131,22 @@ export function DataTable<TData, TValue>({
           <TableBody>
             {table.getRowModel().rows?.length ? (
               table.getRowModel().rows.map((row) => (
-                <TableRow key={row.id}>
+                <TableRow
+                  key={row.id}
+                  className={cn(onRowClick && "cursor-pointer")}
+                  onClick={
+                    onRowClick ? () => onRowClick(row.original) : undefined
+                  }
+                >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell
                       key={cell.id}
                       className={cell.column.columnDef.meta?.className}
+                      onClick={(e) => {
+                        if (cell.column.id === "actions") {
+                          e.stopPropagation();
+                        }
+                      }}
                     >
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </TableCell>
